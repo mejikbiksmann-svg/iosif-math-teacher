@@ -1,131 +1,75 @@
-import { useState } from 'react'
-import {
-  ArrowLeft,
-  ArrowRight,
-  BookOpen,
-  Check,
-  Flame,
-  Lightbulb,
-  MoreHorizontal,
-  PencilLine,
-  Sparkles,
-  Volume2,
-} from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Award, BarChart3, BookOpen, CalendarDays, CheckSquare, ChevronRight, ClipboardList, Home, Menu, PenTool, X } from 'lucide-react'
+import { achievements, assessments, boards, homework, lessons, library, progress, subjectLabels, teachers } from './data/mock/dashboardData'
+import { useSubject } from './context/SubjectContext'
+import { currentRoute, navigate, routePath } from './navigation/router'
+import type { HomeworkStatus, LessonRecord, SubjectId } from './types/dashboard'
 
-const answers = [
-  { value: 15, label: '15 минут' },
-  { value: 20, label: '20 минут' },
-  { value: 25, label: '25 минут' },
-  { value: 30, label: '30 минут' },
-]
+const navItems = [
+  ['/dashboard', 'Главная', Home], ['/lessons', 'Мои уроки', CalendarDays], ['/homework', 'Домашнее задание', ClipboardList],
+  ['/tests', 'Проверочные работы', CheckSquare], ['/results', 'Результаты', BarChart3], ['/board', 'Доска', PenTool],
+  ['/library', 'Библиотека', BookOpen], ['/achievements', 'Достижения', Award],
+] as const
+const homeworkStatus: Record<HomeworkStatus, string> = { 'not-started': 'Не начато', 'in-progress': 'Выполняется', completed: 'Выполнено', reviewed: 'Проверено' }
+const lessonStatus = { upcoming: 'Предстоит', completed: 'Завершён', 'in-progress': 'Идёт сейчас' }
 
-function App() {
-  const [selected, setSelected] = useState<number | null>(null)
-  const [checked, setChecked] = useState(false)
-  const [showHint, setShowHint] = useState(false)
-
-  const isCorrect = checked && selected === 20
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="/lesson" aria-label="Математика с Соломоном">
-          <span className="brand-mark"><Sparkles size={21} /></span>
-          <span>Математика <em>с Соломоном</em></span>
-        </a>
-        <div className="lesson-progress" aria-label="Прогресс урока: 3 из 8">
-          <span>Урок 4</span>
-          <div className="progress-track"><div className="progress-value" /></div>
-          <span>3 из 8</span>
-        </div>
-        <div className="streak"><Flame size={18} fill="currentColor" /> <strong>7</strong><span>дней подряд</span></div>
-        <button className="icon-button" aria-label="Дополнительное меню"><MoreHorizontal /></button>
-      </header>
-
-      <main>
-        <section className="lesson-heading">
-          <a href="/" className="back-link"><ArrowLeft size={17} /> Все уроки</a>
-          <div className="eyebrow"><span>ТЕМА 2</span> · ДРОБИ И ВРЕМЯ</div>
-          <h1>Как найти часть от целого?</h1>
-          <p>Сегодня научимся видеть дроби в обычных ситуациях</p>
-        </section>
-
-        <div className="lesson-layout">
-          <aside className="tutor-card">
-            <div className="portrait" aria-hidden="true">
-              <div className="portrait-hair" />
-              <div className="portrait-face">
-                <span className="eye left" /><span className="eye right" />
-                <span className="glasses left" /><span className="glasses right" />
-                <span className="nose" /><span className="moustache">⌁</span>
-              </div>
-              <div className="portrait-body"><span className="bowtie">◆</span></div>
-            </div>
-            <div className="tutor-name">Соломон Борисович</div>
-            <div className="tutor-role">твой преподаватель</div>
-            <blockquote>
-              «Не спеши считать. Сначала представь, что происходит!»
-            </blockquote>
-            <button className="listen-button"><Volume2 size={18} /> Послушать условие</button>
-          </aside>
-
-          <section className="task-card">
-            <div className="task-number">ЗАДАНИЕ 3</div>
-            <div className="difficulty"><span>●</span><span>●</span><span>●</span><b>СРЕДНЕЕ</b></div>
-            <h2>Разминка перед прогулкой</h2>
-            <p className="problem">
-              Иосиф гулял в парке <strong>1 час</strong>. Первую <span className="fraction"><i>1</i><i>3</i></span> времени он катался на самокате, а остальное время кормил уток.
-            </p>
-            <div className="question">Сколько минут Иосиф катался на самокате?</div>
-
-            <div className="visual-equation" aria-label="Один час разделён на три равные части">
-              <div className="clock">
-                <div className="clock-hand" />
-                <span>60</span><small>минут</small>
-              </div>
-              <ArrowRight className="equation-arrow" />
-              <div className="thirds">
-                {[1, 2, 3].map((part) => <div key={part} className={part === 1 ? 'active' : ''}>?</div>)}
-                <small>3 равные части</small>
-              </div>
-            </div>
-
-            <div className="answer-title">Выбери ответ</div>
-            <div className="answers">
-              {answers.map((answer) => (
-                <button
-                  key={answer.value}
-                  className={`answer ${selected === answer.value ? 'selected' : ''} ${checked && selected === answer.value ? (isCorrect ? 'correct' : 'wrong') : ''}`}
-                  onClick={() => { setSelected(answer.value); setChecked(false) }}
-                >
-                  <span className="radio">{selected === answer.value && <span />}</span>
-                  {answer.label}
-                  {checked && selected === answer.value && isCorrect && <Check size={18} />}
-                </button>
-              ))}
-            </div>
-
-            {showHint && <div className="hint"><Lightbulb size={18} /> В одном часе 60 минут. Раздели 60 на 3 равные части.</div>}
-            {checked && !isCorrect && <div className="feedback error">Почти! Вспомни, сколько минут в одном часе, и попробуй разделить их поровну.</div>}
-            {isCorrect && <div className="feedback success">Верно! 60 ÷ 3 = 20 минут. Отличная работа!</div>}
-
-            <div className="actions">
-              <button className="hint-button" onClick={() => setShowHint((value) => !value)}><Lightbulb size={18} /> {showHint ? 'Скрыть подсказку' : 'Нужна подсказка?'}</button>
-              <button className="check-button" disabled={selected === null} onClick={() => setChecked(true)}>{isCorrect ? 'Продолжить' : 'Проверить'} <ArrowRight size={18} /></button>
-            </div>
-          </section>
-
-          <aside className="notes-card">
-            <div className="notes-heading"><PencilLine size={18} /><span><strong>Черновик</strong><small>Решай здесь как удобно</small></span></div>
-            <textarea aria-label="Черновик для решения" placeholder={'60 минут\n\n1/3 — это...'} />
-            <div className="notes-tip"><BookOpen size={17} /> Можно записать действие или нарисовать схему</div>
-          </aside>
-        </div>
-      </main>
-
-      <footer><span>© 2026 Математика с Соломоном</span><span>Ошибаться — это часть учёбы 🌱</span><a href="/help">Помощь</a></footer>
-    </div>
-  )
+function Link({ to, children, className = '' }: { to: string; children: ReactNode; className?: string }) {
+  return <a href={routePath(to)} className={className} onClick={(event) => { if (!event.metaKey && !event.ctrlKey) { event.preventDefault(); navigate(to) } }}>{children}</a>
 }
 
+function Layout({ route, children }: { route: string; children: ReactNode }) {
+  const { selectedSubject, setSelectedSubject, state } = useSubject()
+  const [open, setOpen] = useState(false)
+  return <div className="dashboard-shell">
+    <aside className={`sidebar ${open ? 'open' : ''}`}>
+      <div className="brand"><span className="brand-mark">И</span><span>Кабинет Иосифа<small>Учимся с интересом</small></span><button className="mobile-close" onClick={() => setOpen(false)} aria-label="Закрыть меню"><X /></button></div>
+      <nav>{navItems.map(([path, label, Icon]) => <Link key={path} to={path} className={route.startsWith(path) ? 'active' : ''}><Icon size={19} />{label}</Link>)}</nav>
+      <div className="sidebar-note">Учебный кабинет<br /><strong>{subjectLabels[selectedSubject]}</strong></div>
+    </aside>
+    <div className="workspace">
+      <header className="app-header"><button className="menu-button" onClick={() => setOpen(true)} aria-label="Открыть меню"><Menu /></button><div><small>Текущий предмет</small><select aria-label="Выбрать предмет" value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value as SubjectId)}>{Object.entries(subjectLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div><div className="teacher-chip"><span>{state.activeTeacher.avatarPlaceholder}</span><div><small>Преподаватель</small><strong>{state.activeTeacher.displayName}</strong></div></div></header>
+      <main className="content">{children}</main>
+    </div>
+  </div>
+}
+
+function PageTitle({ title, text }: { title: string; text: string }) { return <div className="page-title"><p>{text}</p><h1>{title}</h1></div> }
+function Badge({ children, tone = '' }: { children: ReactNode; tone?: string }) { return <span className={`badge ${tone}`}>{children}</span> }
+function LessonRow({ lesson }: { lesson: LessonRecord }) { return <Link to={`/lessons/${lesson.id}`} className="list-row"><div className="date-box"><strong>{new Date(`${lesson.date}T12:00`).getDate()}</strong><small>сент</small></div><div className="row-main"><strong>{lesson.topic}</strong><span>{lesson.time} · {teachers[lesson.subjectId].displayName}</span></div><Badge tone={lesson.status}>{lessonStatus[lesson.status]}</Badge><ChevronRight size={18} /></Link> }
+
+function Dashboard() {
+  const { selectedSubject } = useSubject(); const teacher = teachers[selectedSubject]; const subjectLessons = lessons.filter(x => x.subjectId === selectedSubject)
+  const upcoming = subjectLessons.filter(x => x.status === 'upcoming'); const next = upcoming[0]; const latest = assessments.find(x => x.subjectId === selectedSubject && x.completedAt)!
+  const p = progress[selectedSubject]
+  return <><div className="welcome"><div><p>Добрый день, Йося!</p><h1>Продолжим учиться?</h1><span>Сегодня рядом — {teacher.displayName}</span></div><div className="teacher-avatar">{teacher.avatarPlaceholder}</div></div>
+    <section className="hero-card"><div><Badge>Ближайший урок</Badge><h2>{next.topic}</h2><p>{subjectLabels[selectedSubject]} · {formatDate(next.date)}, {next.time}</p><span>Преподаватель: {teacher.displayName}</span></div><button onClick={() => window.alert('Урок запланирован. Запуск будет подключён на следующем этапе.')}>Начать урок</button></section>
+    <div className="dashboard-grid"><section className="card progress-card"><div className="section-heading"><h2>Мой прогресс</h2><Badge>{Math.round(p.done / p.total * 100)}%</Badge></div><strong>{p.topic}</strong><div className="progress"><i style={{ width: `${p.done / p.total * 100}%` }} /></div><p>Пройдено {p.done} из {p.total} уроков по теме</p></section>
+    <section className="card results-card"><div className="section-heading"><h2>Последние результаты</h2></div><Link to={`/tests/${latest.id}`}><span>{latest.title}</span><strong>{latest.score} / {latest.total} <em>{latest.percentage}%</em></strong><small>{formatDate(latest.date)}</small></Link></section></div>
+    <section className="card"><div className="section-heading"><div><p className="eyebrow">РАСПИСАНИЕ</p><h2>Ближайшие занятия</h2></div><Link to="/lessons/month" className="text-link">Все занятия <ChevronRight size={17} /></Link></div><div className="list">{upcoming.slice(0, 3).map(x => <LessonRow key={x.id} lesson={x} />)}</div></section>
+    <section className="card"><div className="section-heading"><div><p className="eyebrow">МОТИВАЦИЯ</p><h2>Последние достижения</h2></div><Link to="/achievements" className="text-link">Все достижения <ChevronRight size={17} /></Link></div><div className="achievement-grid">{achievements[selectedSubject].slice(0, 4).map((item, i) => <div key={item}><span>{i + 1}</span><strong>{item}</strong></div>)}</div></section></>
+}
+
+function LessonsPage({ monthly = false }: { monthly?: boolean }) { const { selectedSubject } = useSubject(); const all = lessons.filter(x => x.subjectId === selectedSubject); return <><PageTitle title={monthly ? 'Все занятия за месяц' : 'Мои уроки'} text={`${subjectLabels[selectedSubject]} · сентябрь 2026`} />{!monthly && <div className="filters"><select aria-label="Месяц"><option>Сентябрь 2026</option></select><select aria-label="Тема"><option>Все темы</option>{[...new Set(all.map(x => x.topic))].map(x => <option key={x}>{x}</option>)}</select><select aria-label="Статус"><option>Все статусы</option><option>Предстоящие</option><option>Прошедшие</option></select></div>}<section className="card"><div className="section-heading"><h2>Предстоящие</h2></div>{all.filter(x => x.status === 'upcoming').map(x => <LessonRow key={x.id} lesson={x} />)}</section><section className="card"><div className="section-heading"><h2>Прошедшие</h2></div>{all.filter(x => x.status === 'completed').map(x => <LessonRow key={x.id} lesson={x} />)}</section></> }
+function LessonDetail({ id }: { id: string }) { const { selectedSubject } = useSubject(); const lesson = lessons.find(x => x.id === id && x.subjectId === selectedSubject); if (!lesson) return <NotFound />; return <><PageTitle title={lesson.topic} text={`${formatDate(lesson.date)} · ${lesson.time}`} /><section className="card detail-hero"><div><Badge tone={lesson.status}>{lessonStatus[lesson.status]}</Badge><h2>{subjectLabels[selectedSubject]}</h2><p>{teachers[selectedSubject].displayName}</p></div>{lesson.status === 'completed' && <button onClick={() => document.querySelector('#materials')?.scrollIntoView()}>Повторить материал</button>}</section><div className="detail-grid"><Detail title="Краткое резюме"><p>{lesson.summary}</p></Detail><Detail title="Что изучили">{list(lesson.learned)}</Detail><Detail title="Задания на уроке">{list(lesson.assignments)}</Detail><Detail title="Примеры Иосифа">{list(lesson.examples)}</Detail><Detail title="Ответы Иосифа">{list(lesson.studentAnswers)}</Detail><Detail title="Заметки преподавателя"><p>{lesson.teacherNotes}</p></Detail><Detail title="Что повторить">{list(lesson.repeat)}</Detail><Detail title="Рабочие материалы" id="materials">{list(lesson.materials)}</Detail></div></> }
+
+function HomeworkPage({ id }: { id?: string }) { const { selectedSubject } = useSubject(); const data = homework.filter(x => x.subjectId === selectedSubject); const selected = id ? data.find(x => x.id === id) : undefined; if (id && !selected) return <NotFound />; if (selected) return <><PageTitle title={selected.title} text={`Срок: ${formatDate(selected.dueDate)}`} /><Detail title="Что было задано">{list(selected.tasks)}</Detail><Detail title="Работа Иосифа">{list(selected.studentWork ?? ['Задание ещё выполняется'])}</Detail><Detail title="Результат проверки"><p>{selected.result ?? 'Ожидает выполнения'}</p><p>{selected.teacherComment}</p></Detail></>; const active = data.find(x => x.status !== 'reviewed')!; return <><PageTitle title="Домашнее задание" text={subjectLabels[selectedSubject]} /><section className="hero-card compact"><div><Badge tone="in-progress">{homeworkStatus[active.status]}</Badge><h2>{active.title}</h2><p>Срок: {formatDate(active.dueDate)}</p><Link to={`/lessons/${active.lessonId}`} className="text-link">Связанный урок</Link>{list(active.tasks)}</div></section><section className="card"><div className="section-heading"><h2>Архив домашних заданий</h2></div>{data.filter(x => x.status === 'reviewed').map(x => <Link key={x.id} to={`/homework/${x.id}`} className="list-row"><div className="row-main"><strong>{x.title}</strong><span>{formatDate(x.dueDate)}</span></div><Badge tone="completed">{homeworkStatus[x.status]}</Badge><ChevronRight /></Link>)}</section></> }
+
+function TestsPage({ id }: { id?: string }) { const { selectedSubject } = useSubject(); const data = assessments.filter(x => x.subjectId === selectedSubject); const selected = id ? data.find(x => x.id === id) : undefined; if (id && !selected) return <NotFound />; if (selected) return <><PageTitle title={selected.title} text={formatDate(selected.date)} /><section className="card score"><strong>{selected.score} / {selected.total}</strong><span>{selected.percentage}%</span><p>{selected.teacherSummary}</p></section><div className="detail-grid"><Detail title="Задания">{list(selected.exercises)}</Detail><Detail title="Ответы Иосифа">{list(selected.studentAnswers)}</Detail><Detail title="Ошибки">{list(selected.mistakes)}</Detail><Detail title="Правильные решения">{list(selected.correctSolutions)}</Detail><Detail title="Рекомендации">{list(selected.recommendations)}</Detail></div></>; const upcoming = data.find(x => !x.completedAt)!; return <><PageTitle title="Проверочные работы" text={`Одна работа каждую учебную неделю · ${subjectLabels[selectedSubject]}`} /><section className="hero-card compact"><div><Badge>Предстоящая</Badge><h2>{upcoming.title}</h2><p>{formatDate(upcoming.date)} · темы: {upcoming.topicIds.join(', ')}</p></div><button disabled>Откроется в пятницу</button></section><section className="card"><div className="section-heading"><h2>Архив выполненных работ</h2></div>{data.filter(x => x.completedAt).map(x => <Link key={x.id} to={`/tests/${x.id}`} className="list-row"><div className="row-main"><strong>{x.title}</strong><span>{formatDate(x.date)} · {x.topicIds.join(', ')}</span></div><strong>{x.score}/{x.total} · {x.percentage}%</strong><ChevronRight /></Link>)}</section></> }
+
+function ResultsPage() { const { selectedSubject } = useSubject(); const p = progress[selectedSubject]; return <><PageTitle title="Результаты" text={`Общая аналитика · ${subjectLabels[selectedSubject]}`} /><div className="metric-grid"><Metric label="Динамика за месяц" value={p.trend} /><Metric label="Самостоятельность" value={p.independence} /><Metric label="Подсказок за период" value={`${p.hints}`} /></div><div className="detail-grid"><Detail title="Прогресс по текущей теме"><h3>{p.topic}</h3><p>{p.done} из {p.total} уроков пройдено</p></Detail><Detail title="Сильные стороны"><h3>{p.strengths}</h3></Detail><Detail title="Требует внимания"><h3>{p.attention}</h3></Detail><Detail title="Проверочные за период"><p>Средний результат: 80%. Динамика положительная.</p></Detail></div></> }
+function BoardPage() { const { selectedSubject } = useSubject(); const board = boards[selectedSubject]; const [notes, setNotes] = useState(''); return <><PageTitle title="Доска" text={`${subjectLabels[selectedSubject]} · режим ${board.mode}`} /><div className="board-tools">{board.tools.map(x => <button key={x}>{x}</button>)}</div><section className={`whiteboard ${board.mode}`}><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={selectedSubject === 'mathematics' ? 'Решай примеры, записывай вычисления и схемы…' : 'Пиши и сохраняй рабочие заметки…'} aria-label="Рабочая доска" /></section><p className="muted">Черновик хранится в текущей сессии. Расширенные предметные инструменты будут добавлены позже.</p></> }
+function LibraryPage() { const { selectedSubject } = useSubject(); return <><PageTitle title="Библиотека" text={`Материалы · ${subjectLabels[selectedSubject]}`} /><div className="library-grid">{library[selectedSubject].map((x, i) => <section className="card" key={x}><BookOpen /><small>Материал {i + 1}</small><h2>{x}</h2><button>Открыть</button></section>)}</div></> }
+function AchievementsPage() { const { selectedSubject } = useSubject(); return <><PageTitle title="Достижения" text={`Коллекция · ${subjectLabels[selectedSubject]}`} /><div className="achievement-grid full">{achievements[selectedSubject].map((x, i) => <div key={x}><span>{i + 1}</span><div><small>Достижение</small><strong>{x}</strong><p>Отмечает устойчивый учебный прогресс.</p></div></div>)}</div></> }
+function Detail({ title, children, id }: { title: string; children: ReactNode; id?: string }) { return <section className="card detail" id={id}><h2>{title}</h2>{children}</section> }
+function Metric({ label, value }: { label: string; value: string }) { return <section className="card metric"><small>{label}</small><strong>{value}</strong></section> }
+function NotFound() { return <section className="card empty"><h1>Страница не найдена</h1><Link to="/dashboard" className="button">Вернуться на главную</Link></section> }
+function list(items: string[]) { return <ul>{items.map(x => <li key={x}>{x}</li>)}</ul> }
+function formatDate(value: string) { return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(new Date(`${value}T12:00`)) }
+
+function App() {
+  const [route, setRoute] = useState(currentRoute)
+  useEffect(() => { const update = () => setRoute(currentRoute()); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update) }, [])
+  const page = useMemo(() => { const parts = route.split('/').filter(Boolean); if (route === '/' || route === '/dashboard') return <Dashboard />; if (route === '/lessons/month') return <LessonsPage monthly />; if (parts[0] === 'lessons' && parts[1]) return <LessonDetail id={parts[1]} />; if (route === '/lessons') return <LessonsPage />; if (parts[0] === 'homework') return <HomeworkPage id={parts[1]} />; if (parts[0] === 'tests') return <TestsPage id={parts[1]} />; if (route === '/results') return <ResultsPage />; if (route === '/board') return <BoardPage />; if (route === '/library') return <LibraryPage />; if (route === '/achievements') return <AchievementsPage />; return <NotFound /> }, [route])
+  return <Layout route={route}>{page}</Layout>
+}
 export default App
