@@ -28,6 +28,7 @@
 
 - Текущая инфраструктура — Vite + React + TypeScript (не мигрируется на другой фреймворк).
 - Маршрутизация использует History API и реальные статические entry points для GitHub Pages.
+- Preview для внутренних pull request публикуется в отдельный Cloudflare Pages project; production GitHub Pages и его protected environment не используются для preview.
 - Данные этого этапа находятся в `src/data/mock` и строго разделены по `SubjectId`.
 - Внешние AI, voice, speech, avatar и production database интеграции не подключены.
 
