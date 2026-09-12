@@ -1,0 +1,75 @@
+name: Pull request preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# Every PR is stored on one external gh-pages branch. Serialize writes to it.
+concurrency:
+  group: iosif-pr-preview-publish
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    # Secrets are intentionally unavailable to untrusted fork pull requests.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build preview
+        env:
+          PREVIEW_BASE: /iosif-math-teacher-previews/pr-${{ github.event.pull_request.number }}/
+        run: npx tsc -b && npx vite build --base "$PREVIEW_BASE" && node scripts/create-pages-routes.mjs
+      - name: Publish isolated preview
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.PR_PREVIEW_DEPLOY_KEY }}
+          external_repository: ${{ github.repository_owner }}/iosif-math-teacher-previews
+          publish_branch: gh-pages
+          publish_dir: ./dist
+          destination_dir: pr-${{ github.event.pull_request.number }}
+          keep_files: true
+      - name: Add workflow summary
+        env:
+          URL: https://${{ github.repository_owner }}.github.io/iosif-math-teacher-previews/pr-${{ github.event.pull_request.number }}/dashboard/
+        run: |
+          {
+            echo '## Pull request preview'
+            echo "- Commit: \`${{ github.event.pull_request.head.sha }}\`"
+            echo '- Lint: **passed**'
+            echo '- Typecheck: **passed**'
+            echo '- Build: **passed**'
+            echo "- Preview: ${URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Add or update PR comment
+        uses: actions/github-script@v7
+        env:
+          URL: https://${{ github.repository_owner }}.github.io/iosif-math-teacher-previews/pr-${{ github.event.pull_request.number }}/dashboard/
+        with:
+          script: |
+            const marker = '<!-- iosif-pr-preview -->'
+            const body = `${marker}\n## Preview ✅\n\n- Commit: \`${context.payload.pull_request.head.sha}\`\n- Lint: **passed**\n- Typecheck: **passed**\n- Build: **passed**\n- Preview: ${process.env.URL}\n\nProduction GitHub Pages was not changed.`
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number })
+            const old = comments.find(c => c.user.type === 'Bot' && c.body?.includes(marker))
+            if (old) await github.rest.issues.updateComment({ owner, repo, comment_id: old.id, body })
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body })
