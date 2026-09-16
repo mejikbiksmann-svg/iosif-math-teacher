@@ -76,6 +76,7 @@ export function Whiteboard() {
   const strokesRef = useRef<Stroke[]>([])
   const shapesRef = useRef<Shape[]>([])
   const interactionRef = useRef<Interaction>(null)
+  const fingerScrollRef = useRef<{ pointerId: number; lastClientY: number } | null>(null)
 
   const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState('#202124')
@@ -123,6 +124,10 @@ export function Whiteboard() {
   }
 
   function pointFromEvent(event: React.PointerEvent<SVGSVGElement>): Point { return pointFromClient(event.clientX, event.clientY) }
+
+  function isFingerTouch(event: React.PointerEvent<SVGSVGElement>) {
+    return event.pointerType === 'touch' && Math.max(event.width, event.height) > 2
+  }
 
   function strokeTouchesEraser(stroke: Stroke, point: Point, radiusSq: number) {
     if (stroke.points.length === 1) {
@@ -237,7 +242,12 @@ export function Whiteboard() {
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
-    if (tool === 'pen' && event.pointerType === 'touch') return
+    if (tool === 'pen' && isFingerTouch(event)) {
+      event.preventDefault()
+      fingerScrollRef.current = { pointerId: event.pointerId, lastClientY: event.clientY }
+      event.currentTarget.setPointerCapture(event.pointerId)
+      return
+    }
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromEvent(event)
@@ -268,6 +278,15 @@ export function Whiteboard() {
   }
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const fingerScroll = fingerScrollRef.current
+    if (fingerScroll && fingerScroll.pointerId === event.pointerId) {
+      event.preventDefault()
+      const deltaY = fingerScroll.lastClientY - event.clientY
+      if (deltaY !== 0) window.scrollBy(0, deltaY)
+      fingerScrollRef.current = { pointerId: event.pointerId, lastClientY: event.clientY }
+      return
+    }
+
     const point = pointFromEvent(event)
     const interaction = interactionRef.current
     if (interaction) {
@@ -308,6 +327,11 @@ export function Whiteboard() {
   }
 
   function endDrawing(event: React.PointerEvent<SVGSVGElement>) {
+    if (fingerScrollRef.current?.pointerId === event.pointerId) {
+      fingerScrollRef.current = null
+      try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
+      return
+    }
     if (animationFrameRef.current != null) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; flushScheduledWork() }
     drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
@@ -390,7 +414,7 @@ export function Whiteboard() {
         <button title={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} aria-label={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} style={{ ...toolButton(), color: '#d04f4f' }} onClick={selectedId == null ? clearBoard : deleteSelected}><Trash2 size={20} /></button>
       </div>
 
-      <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: tool === 'pen' ? 'pan-y' : 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
+      <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current || fingerScrollRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
       </svg>
