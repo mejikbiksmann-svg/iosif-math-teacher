@@ -1,9 +1,31 @@
 import { memo, useRef, useState } from 'react'
-import { Brush, Eraser, RotateCcw, RotateCw, Trash2 } from 'lucide-react'
+import { Brush, Circle, Eraser, Minus, MousePointer2, MoveRight, RotateCcw, RotateCw, Square, Trash2, Type } from 'lucide-react'
 
 type Point = { x: number; y: number }
 type Stroke = { id: number; points: Point[]; color: string; width: number }
-type Tool = 'pen' | 'eraser'
+type ShapeKind = 'line' | 'arrow' | 'rect' | 'ellipse' | 'text'
+type Shape = {
+  id: number
+  kind: ShapeKind
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation: number
+  color: string
+  width: number
+  text?: string
+}
+type Tool = 'select' | 'pen' | 'eraser' | ShapeKind
+
+type BoardState = { strokes: Stroke[]; shapes: Shape[] }
+
+type Interaction =
+  | { mode: 'draw-shape'; id: number; start: Point }
+  | { mode: 'move'; id: number; start: Point; originX: number; originY: number }
+  | { mode: 'resize'; id: number; start: Point; originW: number; originH: number }
+  | { mode: 'rotate'; id: number; center: Point; startAngle: number; originRotation: number }
+  | null
 
 const palette = ['#202124', '#4f6df5', '#ef5b5b', '#22a06b', '#8b5cf6', '#f5a524']
 const widths = [2, 4, 8, 12]
@@ -18,6 +40,13 @@ const StrokePath = memo(function StrokePath({ stroke }: { stroke: Stroke }) {
   return <path d={pathFor(stroke.points)} fill="none" stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />
 })
 
+function cloneBoard(state: BoardState): BoardState {
+  return {
+    strokes: state.strokes.map(stroke => ({ ...stroke, points: stroke.points.map(point => ({ ...point })) })),
+    shapes: state.shapes.map(shape => ({ ...shape })),
+  }
+}
+
 export function Whiteboard() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const drawingRef = useRef(false)
@@ -27,13 +56,17 @@ export function Whiteboard() {
   const animationFrameRef = useRef<number | null>(null)
   const lastPointRef = useRef<Point | null>(null)
   const strokesRef = useRef<Stroke[]>([])
+  const shapesRef = useRef<Shape[]>([])
+  const interactionRef = useRef<Interaction>(null)
 
   const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState('#202124')
   const [width, setWidth] = useState(4)
   const [strokes, setStrokes] = useState<Stroke[]>([])
-  const [undoStack, setUndoStack] = useState<Stroke[][]>([])
-  const [redoStack, setRedoStack] = useState<Stroke[][]>([])
+  const [shapes, setShapes] = useState<Shape[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [undoStack, setUndoStack] = useState<BoardState[]>([])
+  const [redoStack, setRedoStack] = useState<BoardState[]>([])
 
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
@@ -46,12 +79,20 @@ export function Whiteboard() {
     })
   }
 
-  function cloneStrokes(source: Stroke[]) {
-    return source.map(stroke => ({ ...stroke, points: stroke.points.map(point => ({ ...point })) }))
+  function setShapeState(next: Shape[] | ((current: Shape[]) => Shape[])) {
+    setShapes(current => {
+      const value = typeof next === 'function' ? next(current) : next
+      shapesRef.current = value
+      return value
+    })
+  }
+
+  function currentBoard(): BoardState {
+    return { strokes: strokesRef.current, shapes: shapesRef.current }
   }
 
   function snapshot() {
-    setUndoStack(stack => [...stack, cloneStrokes(strokesRef.current)])
+    setUndoStack(stack => [...stack, cloneBoard(currentBoard())])
     setRedoStack([])
   }
 
@@ -103,13 +144,57 @@ export function Whiteboard() {
     animationFrameRef.current = requestAnimationFrame(flushScheduledWork)
   }
 
+  function makeShape(kind: ShapeKind, point: Point): Shape {
+    return {
+      id: Date.now() + Math.random(),
+      kind,
+      x: point.x,
+      y: point.y,
+      w: 1,
+      h: 1,
+      rotation: 0,
+      color,
+      width,
+      text: kind === 'text' ? 'Текст' : undefined,
+    }
+  }
+
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
+    const point = pointFromEvent(event)
+
+    if (tool === 'select') {
+      setSelectedId(null)
+      interactionRef.current = null
+      return
+    }
+
+    if (tool === 'text') {
+      const value = window.prompt('Введите текст')
+      if (!value) return
+      snapshot()
+      const shape = makeShape('text', point)
+      shape.text = value
+      shape.w = Math.max(120, value.length * 18)
+      shape.h = 42
+      setShapeState(current => [...current, shape])
+      setSelectedId(shape.id)
+      setTool('select')
+      return
+    }
+
+    if (tool === 'line' || tool === 'arrow' || tool === 'rect' || tool === 'ellipse') {
+      snapshot()
+      const shape = makeShape(tool, point)
+      setShapeState(current => [...current, shape])
+      interactionRef.current = { mode: 'draw-shape', id: shape.id, start: point }
+      setSelectedId(shape.id)
+      return
+    }
+
     drawingRef.current = true
     snapshot()
-
-    const point = pointFromEvent(event)
     lastPointRef.current = point
 
     if (tool === 'eraser') {
@@ -120,11 +205,38 @@ export function Whiteboard() {
 
     const id = Date.now() + Math.random()
     activeStrokeIdRef.current = id
-    const next = [...strokesRef.current, { id, points: [point], color, width }]
-    setStrokeState(next)
+    setStrokeState([...strokesRef.current, { id, points: [point], color, width }])
   }
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const point = pointFromEvent(event)
+    const interaction = interactionRef.current
+
+    if (interaction) {
+      event.preventDefault()
+      if (interaction.mode === 'draw-shape') {
+        setShapeState(current => current.map(shape => shape.id === interaction.id ? {
+          ...shape,
+          x: Math.min(interaction.start.x, point.x),
+          y: Math.min(interaction.start.y, point.y),
+          w: Math.max(1, Math.abs(point.x - interaction.start.x)),
+          h: Math.max(1, Math.abs(point.y - interaction.start.y)),
+        } : shape))
+      } else if (interaction.mode === 'move') {
+        const dx = point.x - interaction.start.x
+        const dy = point.y - interaction.start.y
+        setShapeState(current => current.map(shape => shape.id === interaction.id ? { ...shape, x: interaction.originX + dx, y: interaction.originY + dy } : shape))
+      } else if (interaction.mode === 'resize') {
+        const dx = point.x - interaction.start.x
+        const dy = point.y - interaction.start.y
+        setShapeState(current => current.map(shape => shape.id === interaction.id ? { ...shape, w: Math.max(18, interaction.originW + dx), h: Math.max(18, interaction.originH + dy) } : shape))
+      } else if (interaction.mode === 'rotate') {
+        const angle = Math.atan2(point.y - interaction.center.y, point.x - interaction.center.x) * 180 / Math.PI
+        setShapeState(current => current.map(shape => shape.id === interaction.id ? { ...shape, rotation: interaction.originRotation + angle - interaction.startAngle } : shape))
+      }
+      return
+    }
+
     if (!drawingRef.current) return
     event.preventDefault()
 
@@ -139,15 +251,15 @@ export function Whiteboard() {
     }
 
     for (const item of coalesced) {
-      const point = pointFromClient(item.clientX, item.clientY)
+      const nextPoint = pointFromClient(item.clientX, item.clientY)
       const last = lastPointRef.current
       if (last) {
-        const dx = point.x - last.x
-        const dy = point.y - last.y
+        const dx = nextPoint.x - last.x
+        const dy = nextPoint.y - last.y
         if (dx * dx + dy * dy < 2.25) continue
       }
-      lastPointRef.current = point
-      pendingPointsRef.current.push(point)
+      lastPointRef.current = nextPoint
+      pendingPointsRef.current.push(nextPoint)
     }
     scheduleFlush()
   }
@@ -163,29 +275,72 @@ export function Whiteboard() {
     pendingPointsRef.current = []
     latestErasePointRef.current = null
     lastPointRef.current = null
+    interactionRef.current = null
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* pointer capture may already be released */ }
+  }
+
+  function beginMove(event: React.PointerEvent<SVGGElement>, shape: Shape) {
+    if (tool !== 'select') return
+    event.stopPropagation()
+    event.preventDefault()
+    snapshot()
+    setSelectedId(shape.id)
+    interactionRef.current = { mode: 'move', id: shape.id, start: pointFromClient(event.clientX, event.clientY), originX: shape.x, originY: shape.y }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginResize(event: React.PointerEvent<SVGCircleElement>, shape: Shape) {
+    event.stopPropagation()
+    event.preventDefault()
+    snapshot()
+    interactionRef.current = { mode: 'resize', id: shape.id, start: pointFromClient(event.clientX, event.clientY), originW: shape.w, originH: shape.h }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginRotate(event: React.PointerEvent<SVGCircleElement>, shape: Shape) {
+    event.stopPropagation()
+    event.preventDefault()
+    snapshot()
+    const center = { x: shape.x + shape.w / 2, y: shape.y + shape.h / 2 }
+    const point = pointFromClient(event.clientX, event.clientY)
+    const startAngle = Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI
+    interactionRef.current = { mode: 'rotate', id: shape.id, center, startAngle, originRotation: shape.rotation }
+    svgRef.current?.setPointerCapture(event.pointerId)
   }
 
   function undo() {
     if (!canUndo) return
     const previous = undoStack[undoStack.length - 1]
-    setRedoStack(stack => [...stack, cloneStrokes(strokesRef.current)])
-    setStrokeState(previous)
+    setRedoStack(stack => [...stack, cloneBoard(currentBoard())])
+    setStrokeState(previous.strokes)
+    setShapeState(previous.shapes)
+    setSelectedId(null)
     setUndoStack(stack => stack.slice(0, -1))
   }
 
   function redo() {
     if (!canRedo) return
     const next = redoStack[redoStack.length - 1]
-    setUndoStack(stack => [...stack, cloneStrokes(strokesRef.current)])
-    setStrokeState(next)
+    setUndoStack(stack => [...stack, cloneBoard(currentBoard())])
+    setStrokeState(next.strokes)
+    setShapeState(next.shapes)
+    setSelectedId(null)
     setRedoStack(stack => stack.slice(0, -1))
   }
 
   function clearBoard() {
-    if (!strokesRef.current.length) return
+    if (!strokesRef.current.length && !shapesRef.current.length) return
     snapshot()
     setStrokeState([])
+    setShapeState([])
+    setSelectedId(null)
+  }
+
+  function deleteSelected() {
+    if (selectedId == null) return
+    snapshot()
+    setShapeState(current => current.filter(shape => shape.id !== selectedId))
+    setSelectedId(null)
   }
 
   const toolButton = (active = false): React.CSSProperties => ({
@@ -200,106 +355,83 @@ export function Whiteboard() {
     cursor: 'pointer',
   })
 
+  function renderShape(shape: Shape) {
+    const selected = selectedId === shape.id
+    const cx = shape.x + shape.w / 2
+    const cy = shape.y + shape.h / 2
+    const transform = `rotate(${shape.rotation} ${cx} ${cy})`
+    const common = {
+      stroke: shape.color,
+      strokeWidth: shape.width,
+      fill: 'transparent',
+      strokeLinecap: 'round' as const,
+      strokeLinejoin: 'round' as const,
+    }
+
+    return <g key={shape.id} transform={transform} onPointerDown={event => beginMove(event, shape)} style={{ cursor: tool === 'select' ? 'move' : 'default' }}>
+      {shape.kind === 'rect' && <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={8} {...common} />}
+      {shape.kind === 'ellipse' && <ellipse cx={cx} cy={cy} rx={shape.w / 2} ry={shape.h / 2} {...common} />}
+      {shape.kind === 'line' && <line x1={shape.x} y1={shape.y} x2={shape.x + shape.w} y2={shape.y + shape.h} {...common} />}
+      {shape.kind === 'arrow' && <>
+        <line x1={shape.x} y1={shape.y} x2={shape.x + shape.w} y2={shape.y + shape.h} {...common} />
+        <path d={`M ${shape.x + shape.w} ${shape.y + shape.h} l -18 -8 m 18 8 l -8 -18`} {...common} />
+      </>}
+      {shape.kind === 'text' && <text x={shape.x} y={shape.y + Math.min(shape.h, 34)} fill={shape.color} fontSize={30} fontFamily="Inter, system-ui, sans-serif" stroke="none">{shape.text}</text>}
+      {selected && <>
+        <rect x={shape.x - 8} y={shape.y - 8} width={shape.w + 16} height={shape.h + 16} fill="none" stroke="#4f6df5" strokeWidth={2} strokeDasharray="7 5" rx={8} />
+        <line x1={cx} y1={shape.y - 8} x2={cx} y2={shape.y - 34} stroke="#4f6df5" strokeWidth={2} />
+        <circle cx={cx} cy={shape.y - 42} r={8} fill="#fff" stroke="#4f6df5" strokeWidth={3} onPointerDown={event => beginRotate(event, shape)} style={{ cursor: 'grab' }} />
+        <circle cx={shape.x + shape.w + 8} cy={shape.y + shape.h + 8} r={9} fill="#fff" stroke="#4f6df5" strokeWidth={3} onPointerDown={event => beginResize(event, shape)} style={{ cursor: 'nwse-resize' }} />
+      </>}
+    </g>
+  }
+
   return <div style={{ position: 'relative' }}>
-    <div style={{
-      position: 'relative',
-      minHeight: 560,
-      border: '1px solid #e6e8ec',
-      borderRadius: 22,
-      overflow: 'hidden',
-      background: '#f8f9fb',
-      boxShadow: '0 18px 40px rgba(38, 43, 52, .08)',
-    }}>
-      <div style={{
-        position: 'absolute',
-        zIndex: 3,
-        top: 18,
-        left: 18,
-        display: 'grid',
-        gap: 6,
-        padding: 8,
-        borderRadius: 16,
-        background: 'rgba(255,255,255,.96)',
-        border: '1px solid #e7e9ee',
-        boxShadow: '0 10px 28px rgba(34, 40, 49, .12)',
-        backdropFilter: 'blur(10px)',
-      }}>
+    <div style={{ position: 'relative', minHeight: 560, border: '1px solid #e6e8ec', borderRadius: 22, overflow: 'hidden', background: '#f8f9fb', boxShadow: '0 18px 40px rgba(38, 43, 52, .08)' }}>
+      <div style={{ position: 'absolute', zIndex: 3, top: 18, left: 18, display: 'grid', gap: 6, padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
+        <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
         <button title="Стилус" aria-label="Стилус" style={toolButton(tool === 'pen')} onClick={() => setTool('pen')}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
         <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
+        <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
+        <button title="Линия" aria-label="Линия" style={toolButton(tool === 'line')} onClick={() => setTool('line')}><Minus size={21} /></button>
+        <button title="Стрелка" aria-label="Стрелка" style={toolButton(tool === 'arrow')} onClick={() => setTool('arrow')}><MoveRight size={21} /></button>
+        <button title="Прямоугольник" aria-label="Прямоугольник" style={toolButton(tool === 'rect')} onClick={() => setTool('rect')}><Square size={21} /></button>
+        <button title="Эллипс" aria-label="Эллипс" style={toolButton(tool === 'ellipse')} onClick={() => setTool('ellipse')}><Circle size={21} /></button>
+        <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
         <button title="Отменить" aria-label="Отменить" style={{ ...toolButton(), opacity: canUndo ? 1 : .35 }} disabled={!canUndo} onClick={undo}><RotateCcw size={20} /></button>
         <button title="Вернуть" aria-label="Вернуть" style={{ ...toolButton(), opacity: canRedo ? 1 : .35 }} disabled={!canRedo} onClick={redo}><RotateCw size={20} /></button>
-        <button title="Очистить доску" aria-label="Очистить доску" style={{ ...toolButton(), color: '#d04f4f' }} onClick={clearBoard}><Trash2 size={20} /></button>
+        <button title={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} aria-label={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} style={{ ...toolButton(), color: '#d04f4f' }} onClick={selectedId == null ? clearBoard : deleteSelected}><Trash2 size={20} /></button>
       </div>
 
       <svg
         ref={svgRef}
         viewBox="0 0 1200 650"
         width="100%"
-        style={{
-          display: 'block',
-          height: 'min(72vh, 680px)',
-          minHeight: 560,
-          touchAction: 'none',
-          cursor: tool === 'eraser' ? 'cell' : 'crosshair',
-          backgroundColor: '#ffffff',
-          backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
-        }}
+        style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrawing}
         onPointerCancel={endDrawing}
-        onPointerLeave={event => { if (drawingRef.current && event.buttons === 0) endDrawing(event) }}
+        onPointerLeave={event => { if ((drawingRef.current || interactionRef.current) && event.buttons === 0) endDrawing(event) }}
         aria-label="Интерактивная учебная доска"
       >
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
+        {shapes.map(renderShape)}
       </svg>
 
-      <div style={{
-        position: 'absolute',
-        zIndex: 3,
-        left: '50%',
-        bottom: 18,
-        transform: 'translateX(-50%)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 9,
-        padding: '9px 12px',
-        borderRadius: 16,
-        background: 'rgba(255,255,255,.96)',
-        border: '1px solid #e7e9ee',
-        boxShadow: '0 10px 28px rgba(34, 40, 49, .12)',
-        backdropFilter: 'blur(10px)',
-      }}>
-        {palette.map(item => <button key={item} aria-label={`Цвет ${item}`} onClick={() => { setColor(item); setTool('pen') }} style={{
-          width: 27,
-          height: 27,
-          padding: 0,
-          borderRadius: '50%',
-          border: color === item ? '3px solid #fff' : '2px solid #fff',
-          outline: color === item ? '2px solid #4f6df5' : '1px solid #dfe2e8',
-          background: item,
-          cursor: 'pointer',
-        }} />)}
-        <input aria-label="Свой цвет" type="color" value={color} onChange={e => { setColor(e.target.value); setTool('pen') }} style={{ width: 30, height: 30, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }} />
+      <div style={{ position: 'absolute', zIndex: 3, left: '50%', bottom: 18, transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
+        {palette.map(item => <button key={item} aria-label={`Цвет ${item}`} onClick={() => { setColor(item); if (selectedId != null) setShapeState(current => current.map(shape => shape.id === selectedId ? { ...shape, color: item } : shape)) }} style={{ width: 27, height: 27, padding: 0, borderRadius: '50%', border: color === item ? '3px solid #fff' : '2px solid #fff', outline: color === item ? '2px solid #4f6df5' : '1px solid #dfe2e8', background: item, cursor: 'pointer' }} />)}
+        <input aria-label="Свой цвет" type="color" value={color} onChange={e => { setColor(e.target.value); if (selectedId != null) setShapeState(current => current.map(shape => shape.id === selectedId ? { ...shape, color: e.target.value } : shape)) }} style={{ width: 30, height: 30, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }} />
         <div style={{ width: 1, height: 26, background: '#e8eaf0', margin: '0 2px' }} />
-        <select aria-label="Толщина линии" value={width} onChange={e => setWidth(Number(e.target.value))} style={{
-          border: 0,
-          background: '#f4f6f8',
-          borderRadius: 10,
-          padding: '8px 10px',
-          color: '#414754',
-          fontWeight: 700,
-          cursor: 'pointer',
-        }}>
+        <select aria-label="Толщина линии" value={width} onChange={e => { const next = Number(e.target.value); setWidth(next); if (selectedId != null) setShapeState(current => current.map(shape => shape.id === selectedId ? { ...shape, width: next } : shape)) }} style={{ border: 0, background: '#f4f6f8', borderRadius: 10, padding: '8px 10px', color: '#414754', fontWeight: 700, cursor: 'pointer' }}>
           {widths.map(item => <option value={item} key={item}>{item}px</option>)}
         </select>
       </div>
     </div>
 
     <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>
-      Доска работает в новом визуальном стиле: свободный холст, плавающая панель инструментов и компактные настройки рисования.
+      Этап 2: текст, линии, стрелки, фигуры, выделение, перемещение, изменение размера и вращение объектов уже подключены.
     </p>
   </div>
 }
