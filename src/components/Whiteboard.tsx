@@ -36,6 +36,23 @@ function pathFor(points: Point[]) {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
 }
 
+function pointSegmentDistanceSq(point: Point, a: Point, b: Point) {
+  const abX = b.x - a.x
+  const abY = b.y - a.y
+  const lengthSq = abX * abX + abY * abY
+  if (lengthSq === 0) {
+    const dx = point.x - a.x
+    const dy = point.y - a.y
+    return dx * dx + dy * dy
+  }
+  const t = Math.max(0, Math.min(1, ((point.x - a.x) * abX + (point.y - a.y) * abY) / lengthSq))
+  const x = a.x + t * abX
+  const y = a.y + t * abY
+  const dx = point.x - x
+  const dy = point.y - y
+  return dx * dx + dy * dy
+}
+
 const StrokePath = memo(function StrokePath({ stroke }: { stroke: Stroke }) {
   return <path d={pathFor(stroke.points)} fill="none" stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />
 })
@@ -53,7 +70,7 @@ export function Whiteboard() {
   const drawingRef = useRef(false)
   const activeStrokeIdRef = useRef<number | null>(null)
   const pendingPointsRef = useRef<Point[]>([])
-  const latestErasePointRef = useRef<Point | null>(null)
+  const pendingErasePointsRef = useRef<Point[]>([])
   const animationFrameRef = useRef<number | null>(null)
   const lastPointRef = useRef<Point | null>(null)
   const strokesRef = useRef<Stroke[]>([])
@@ -93,29 +110,66 @@ export function Whiteboard() {
   function pointFromClient(clientX: number, clientY: number): Point {
     const svg = svgRef.current
     if (!svg) return { x: 0, y: 0 }
+    const matrix = svg.getScreenCTM()
+    if (matrix) {
+      const point = svg.createSVGPoint()
+      point.x = clientX
+      point.y = clientY
+      const transformed = point.matrixTransform(matrix.inverse())
+      return { x: transformed.x, y: transformed.y }
+    }
     const rect = svg.getBoundingClientRect()
     return { x: ((clientX - rect.left) / rect.width) * 1200, y: ((clientY - rect.top) / rect.height) * 650 }
   }
 
   function pointFromEvent(event: React.PointerEvent<SVGSVGElement>): Point { return pointFromClient(event.clientX, event.clientY) }
 
-  function eraseAt(point: Point) {
-    const radius = Math.max(18, width * 2.2)
+  function strokeTouchesEraser(stroke: Stroke, point: Point, radiusSq: number) {
+    if (stroke.points.length === 1) {
+      const dx = stroke.points[0].x - point.x
+      const dy = stroke.points[0].y - point.y
+      return dx * dx + dy * dy <= radiusSq
+    }
+    for (let i = 1; i < stroke.points.length; i += 1) {
+      if (pointSegmentDistanceSq(point, stroke.points[i - 1], stroke.points[i]) <= radiusSq) return true
+    }
+    return false
+  }
+
+  function eraseAtPoints(points: Point[]) {
+    if (!points.length) return
+    const radius = Math.max(28, width * 3)
     const radiusSq = radius * radius
     const current = strokesRef.current
-    const next = current.filter(stroke => !stroke.points.some(p => {
-      const dx = p.x - point.x; const dy = p.y - point.y
-      return dx * dx + dy * dy <= radiusSq
-    }))
+    const next = current.filter(stroke => !points.some(point => strokeTouchesEraser(stroke, point, radiusSq)))
     if (next.length !== current.length) setStrokeState(next)
+  }
+
+  function queueErasePoint(point: Point) {
+    const previous = lastPointRef.current
+    if (!previous) {
+      pendingErasePointsRef.current.push(point)
+      lastPointRef.current = point
+      return
+    }
+    const dx = point.x - previous.x
+    const dy = point.y - previous.y
+    const distance = Math.hypot(dx, dy)
+    const step = 10
+    const count = Math.max(1, Math.ceil(distance / step))
+    for (let i = 1; i <= count; i += 1) {
+      const t = i / count
+      pendingErasePointsRef.current.push({ x: previous.x + dx * t, y: previous.y + dy * t })
+    }
+    lastPointRef.current = point
   }
 
   function flushScheduledWork() {
     animationFrameRef.current = null
     if (tool === 'eraser') {
-      const point = latestErasePointRef.current
-      latestErasePointRef.current = null
-      if (point) eraseAt(point)
+      const points = pendingErasePointsRef.current
+      pendingErasePointsRef.current = []
+      eraseAtPoints(points)
       return
     }
     const activeId = activeStrokeIdRef.current
@@ -206,7 +260,7 @@ export function Whiteboard() {
     drawingRef.current = true
     snapshot()
     lastPointRef.current = point
-    if (tool === 'eraser') { latestErasePointRef.current = point; scheduleFlush(); return }
+    if (tool === 'eraser') { pendingErasePointsRef.current = [point]; scheduleFlush(); return }
     const id = Date.now() + Math.random()
     activeStrokeIdRef.current = id
     setStrokeState([...strokesRef.current, { id, points: [point], color, width }])
@@ -239,8 +293,7 @@ export function Whiteboard() {
     const nativeEvent = event.nativeEvent
     const coalesced = typeof nativeEvent.getCoalescedEvents === 'function' ? nativeEvent.getCoalescedEvents() : [nativeEvent]
     if (tool === 'eraser') {
-      const last = coalesced[coalesced.length - 1]
-      latestErasePointRef.current = pointFromClient(last.clientX, last.clientY)
+      for (const item of coalesced) queueErasePoint(pointFromClient(item.clientX, item.clientY))
       scheduleFlush(); return
     }
     for (const item of coalesced) {
@@ -255,7 +308,7 @@ export function Whiteboard() {
 
   function endDrawing(event: React.PointerEvent<SVGSVGElement>) {
     if (animationFrameRef.current != null) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; flushScheduledWork() }
-    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; latestErasePointRef.current = null; lastPointRef.current = null; interactionRef.current = null
+    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
   }
 
@@ -336,7 +389,7 @@ export function Whiteboard() {
         <button title={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} aria-label={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} style={{ ...toolButton(), color: '#d04f4f' }} onClick={selectedId == null ? clearBoard : deleteSelected}><Trash2 size={20} /></button>
       </div>
 
-      <svg ref={svgRef} viewBox="0 0 1200 650" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
+      <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
       </svg>
