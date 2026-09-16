@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
+import { Brush, Eraser, RotateCcw, RotateCw, Trash2 } from 'lucide-react'
 
 type Point = { x: number; y: number }
 type Stroke = { id: number; points: Point[]; color: string; width: number }
 type Tool = 'pen' | 'eraser'
 
-const palette = ['#1f2937', '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#f59e0b']
+const palette = ['#202124', '#4f6df5', '#ef5b5b', '#22a06b', '#8b5cf6', '#f5a524']
 const widths = [2, 4, 8, 12]
 
 export function Whiteboard() {
@@ -12,7 +13,7 @@ export function Whiteboard() {
   const drawingRef = useRef(false)
   const activeStrokeIdRef = useRef<number | null>(null)
   const [tool, setTool] = useState<Tool>('pen')
-  const [color, setColor] = useState('#1f2937')
+  const [color, setColor] = useState('#202124')
   const [width, setWidth] = useState(4)
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [undoStack, setUndoStack] = useState<Stroke[][]>([])
@@ -100,38 +101,64 @@ export function Whiteboard() {
     setStrokes([])
   }
 
-  const buttonStyle = (active = false): React.CSSProperties => ({
-    border: '1px solid #d8d5cc',
-    background: active ? '#244d42' : '#fff',
-    color: active ? '#fff' : '#33413c',
-    padding: '9px 12px',
-    borderRadius: 10,
-    fontWeight: 700,
+  const toolButton = (active = false): React.CSSProperties => ({
+    width: 44,
+    height: 44,
+    border: 0,
+    borderRadius: 12,
+    display: 'grid',
+    placeItems: 'center',
+    background: active ? '#eef0ff' : 'transparent',
+    color: active ? '#4f6df5' : '#525866',
     cursor: 'pointer',
   })
 
-  return <div style={{ display: 'grid', gap: 12 }}>
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: 10, background: '#fff', border: '1px solid #e0ded6', borderRadius: 14 }}>
-      <button style={buttonStyle(tool === 'pen')} onClick={() => setTool('pen')}>Стилус</button>
-      <button style={buttonStyle(tool === 'eraser')} onClick={() => setTool('eraser')}>Ластик</button>
-      <span style={{ width: 1, height: 28, background: '#e5e2da' }} />
-      {palette.map(item => <button key={item} aria-label={`Цвет ${item}`} onClick={() => { setColor(item); setTool('pen') }} style={{ width: 30, height: 30, padding: 0, borderRadius: '50%', border: color === item ? '3px solid #244d42' : '2px solid #fff', boxShadow: '0 0 0 1px #d8d5cc', background: item, cursor: 'pointer' }} />)}
-      <input aria-label="Свой цвет" type="color" value={color} onChange={e => { setColor(e.target.value); setTool('pen') }} style={{ width: 38, height: 34, border: 0, background: 'transparent', padding: 0 }} />
-      <select aria-label="Толщина линии" value={width} onChange={e => setWidth(Number(e.target.value))} style={{ padding: '9px 10px', border: '1px solid #d8d5cc', borderRadius: 10, background: '#fff' }}>
-        {widths.map(item => <option value={item} key={item}>{item}px</option>)}
-      </select>
-      <span style={{ flex: 1 }} />
-      <button style={{ ...buttonStyle(), opacity: canUndo ? 1 : .45 }} disabled={!canUndo} onClick={undo}>Отменить</button>
-      <button style={{ ...buttonStyle(), opacity: canRedo ? 1 : .45 }} disabled={!canRedo} onClick={redo}>Вернуть</button>
-      <button style={{ ...buttonStyle(), color: '#a33b2f' }} onClick={clearBoard}>Очистить</button>
-    </div>
+  return <div style={{ position: 'relative' }}>
+    <div style={{
+      position: 'relative',
+      minHeight: 560,
+      border: '1px solid #e6e8ec',
+      borderRadius: 22,
+      overflow: 'hidden',
+      background: '#f8f9fb',
+      boxShadow: '0 18px 40px rgba(38, 43, 52, .08)',
+    }}>
+      <div style={{
+        position: 'absolute',
+        zIndex: 3,
+        top: 18,
+        left: 18,
+        display: 'grid',
+        gap: 6,
+        padding: 8,
+        borderRadius: 16,
+        background: 'rgba(255,255,255,.96)',
+        border: '1px solid #e7e9ee',
+        boxShadow: '0 10px 28px rgba(34, 40, 49, .12)',
+        backdropFilter: 'blur(10px)',
+      }}>
+        <button title="Стилус" aria-label="Стилус" style={toolButton(tool === 'pen')} onClick={() => setTool('pen')}><Brush size={21} /></button>
+        <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
+        <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
+        <button title="Отменить" aria-label="Отменить" style={{ ...toolButton(), opacity: canUndo ? 1 : .35 }} disabled={!canUndo} onClick={undo}><RotateCcw size={20} /></button>
+        <button title="Вернуть" aria-label="Вернуть" style={{ ...toolButton(), opacity: canRedo ? 1 : .35 }} disabled={!canRedo} onClick={redo}><RotateCw size={20} /></button>
+        <button title="Очистить доску" aria-label="Очистить доску" style={{ ...toolButton(), color: '#d04f4f' }} onClick={clearBoard}><Trash2 size={20} /></button>
+      </div>
 
-    <div style={{ border: '1px solid #d9d6cd', borderRadius: 16, overflow: 'hidden', background: '#fff', boxShadow: '0 8px 24px rgba(43,56,49,.06)' }}>
       <svg
         ref={svgRef}
         viewBox="0 0 1200 650"
         width="100%"
-        style={{ display: 'block', height: 'min(68vh, 650px)', minHeight: 430, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : 'crosshair', backgroundColor: '#fff', backgroundImage: 'linear-gradient(#edf0ed 1px, transparent 1px), linear-gradient(90deg, #edf0ed 1px, transparent 1px)', backgroundSize: '24px 24px' }}
+        style={{
+          display: 'block',
+          height: 'min(72vh, 680px)',
+          minHeight: 560,
+          touchAction: 'none',
+          cursor: tool === 'eraser' ? 'cell' : 'crosshair',
+          backgroundColor: '#ffffff',
+          backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)',
+          backgroundSize: '24px 24px',
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDrawing}
@@ -141,7 +168,51 @@ export function Whiteboard() {
       >
         {strokes.map(stroke => <path key={stroke.id} d={pathFor(stroke.points)} fill="none" stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />)}
       </svg>
+
+      <div style={{
+        position: 'absolute',
+        zIndex: 3,
+        left: '50%',
+        bottom: 18,
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
+        padding: '9px 12px',
+        borderRadius: 16,
+        background: 'rgba(255,255,255,.96)',
+        border: '1px solid #e7e9ee',
+        boxShadow: '0 10px 28px rgba(34, 40, 49, .12)',
+        backdropFilter: 'blur(10px)',
+      }}>
+        {palette.map(item => <button key={item} aria-label={`Цвет ${item}`} onClick={() => { setColor(item); setTool('pen') }} style={{
+          width: 27,
+          height: 27,
+          padding: 0,
+          borderRadius: '50%',
+          border: color === item ? '3px solid #fff' : '2px solid #fff',
+          outline: color === item ? '2px solid #4f6df5' : '1px solid #dfe2e8',
+          background: item,
+          cursor: 'pointer',
+        }} />)}
+        <input aria-label="Свой цвет" type="color" value={color} onChange={e => { setColor(e.target.value); setTool('pen') }} style={{ width: 30, height: 30, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }} />
+        <div style={{ width: 1, height: 26, background: '#e8eaf0', margin: '0 2px' }} />
+        <select aria-label="Толщина линии" value={width} onChange={e => setWidth(Number(e.target.value))} style={{
+          border: 0,
+          background: '#f4f6f8',
+          borderRadius: 10,
+          padding: '8px 10px',
+          color: '#414754',
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}>
+          {widths.map(item => <option value={item} key={item}>{item}px</option>)}
+        </select>
+      </div>
     </div>
-    <p style={{ margin: 0, color: '#7e8985', fontSize: 12 }}>Этап 1: стилус, цвета, толщина линии, ластик, отмена/возврат и очистка. Следующими этапами добавим объекты, изображения, масштабирование, фреймы, фигуры, текст, совместную работу и остальные возможности UniDraw.</p>
+
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>
+      Доска работает в новом визуальном стиле: свободный холст, плавающая панель инструментов и компактные настройки рисования.
+    </p>
   </div>
 }
