@@ -237,6 +237,7 @@ export function Whiteboard() {
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (tool === 'pen' && event.pointerType === 'touch') return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromEvent(event)
@@ -389,7 +390,7 @@ export function Whiteboard() {
         <button title={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} aria-label={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} style={{ ...toolButton(), color: '#d04f4f' }} onClick={selectedId == null ? clearBoard : deleteSelected}><Trash2 size={20} /></button>
       </div>
 
-      <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
+      <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: tool === 'pen' ? 'pan-y' : 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
       </svg>
