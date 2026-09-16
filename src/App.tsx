@@ -26,6 +26,7 @@ function Layout({ route, children }: { route: string; children: ReactNode }) {
       <nav>{navItems.map(([path, label, Icon]) => <Link key={path} to={path} className={route.startsWith(path) ? 'active' : ''}><Icon size={19} />{label}</Link>)}</nav>
       <div className="sidebar-note">Учебный кабинет<br /><strong>{subjectLabels[selectedSubject]}</strong></div>
     </aside>
+    {open && <button className="sidebar-backdrop" onClick={() => setOpen(false)} aria-label="Закрыть меню, нажав вне панели" />}
     <div className="workspace">
       <header className="app-header"><button className="menu-button" onClick={() => setOpen(true)} aria-label="Открыть меню"><Menu /></button><div><small>Текущий предмет</small><select aria-label="Выбрать предмет" value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value as SubjectId)}>{Object.entries(subjectLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></div><div className="teacher-chip"><span>{state.activeTeacher.avatarPlaceholder}</span><div><small>Преподаватель</small><strong>{state.activeTeacher.displayName}</strong></div></div></header>
       <main className="content">{children}</main>
