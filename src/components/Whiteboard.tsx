@@ -125,8 +125,19 @@ export function Whiteboard() {
 
   function pointFromEvent(event: React.PointerEvent<SVGSVGElement>): Point { return pointFromClient(event.clientX, event.clientY) }
 
+  function isStylusLike(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType === 'pen') return true
+    if (event.pointerType !== 'touch') return false
+
+    const contactSize = Math.max(event.width || 0, event.height || 0)
+    const hasPenTilt = Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0
+    const pressureDiffersFromGenericTouch = event.pressure > 0 && Math.abs(event.pressure - 0.5) > 0.08
+
+    return contactSize <= 12 || hasPenTilt || pressureDiffersFromGenericTouch
+  }
+
   function isFingerTouch(event: React.PointerEvent<SVGSVGElement>) {
-    return event.pointerType === 'touch' && Math.max(event.width, event.height) > 2
+    return event.pointerType === 'touch' && !isStylusLike(event)
   }
 
   function strokeTouchesEraser(stroke: Stroke, point: Point, radiusSq: number) {
