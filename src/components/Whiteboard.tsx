@@ -129,11 +129,12 @@ export function Whiteboard() {
     if (event.pointerType === 'pen') return true
     if (event.pointerType !== 'touch') return false
 
-    const contactSize = Math.max(event.width || 0, event.height || 0)
     const hasPenTilt = Math.abs(event.tiltX) > 0 || Math.abs(event.tiltY) > 0
-    const pressureDiffersFromGenericTouch = event.pressure > 0 && Math.abs(event.pressure - 0.5) > 0.08
+    const pressureLooksLikePen = event.pressure > 0 && Math.abs(event.pressure - 0.5) > 0.08
+    const nativeEvent = event.nativeEvent as PointerEvent
+    const hasPenOnlySignal = Math.abs(nativeEvent.tangentialPressure || 0) > 0 || (nativeEvent.twist || 0) !== 0
 
-    return contactSize <= 12 || hasPenTilt || pressureDiffersFromGenericTouch
+    return hasPenTilt || pressureLooksLikePen || hasPenOnlySignal
   }
 
   function isFingerTouch(event: React.PointerEvent<SVGSVGElement>) {
