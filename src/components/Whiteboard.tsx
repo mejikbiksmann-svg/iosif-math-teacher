@@ -37,18 +37,18 @@ export function Whiteboard() {
     const pointers = new Map<number, Point>()
     let lastPoint: Point | null = null
     let pinchStart: { distance: number; view: ViewBox; anchor: Point } | null = null
-    let previouslyActiveButton: HTMLButtonElement | null = null
-    let previousButtonBackground = ''
-    let previousButtonColor = ''
+    let previousActive: HTMLButtonElement | null = null
+    let previousBackground = ''
+    let previousColor = ''
 
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.dataset.boardHand = 'true'
-    button.setAttribute('aria-label', 'Рука')
-    button.setAttribute('aria-pressed', 'false')
-    button.title = 'Рука — перемещение и масштаб'
-    button.innerHTML = handIcon()
-    Object.assign(button.style, {
+    const handButton = document.createElement('button')
+    handButton.type = 'button'
+    handButton.dataset.boardHand = 'true'
+    handButton.setAttribute('aria-label', 'Рука')
+    handButton.setAttribute('aria-pressed', 'false')
+    handButton.title = 'Рука — перемещение и масштаб'
+    handButton.innerHTML = handIcon()
+    Object.assign(handButton.style, {
       width: '44px',
       height: '44px',
       border: '0',
@@ -60,25 +60,41 @@ export function Whiteboard() {
       cursor: 'pointer',
       padding: '0',
     })
-    selectButton.insertAdjacentElement('afterend', button)
+    selectButton.insertAdjacentElement('afterend', handButton)
 
-    const overlay = document.createElement('div')
-    overlay.dataset.boardHandOverlay = 'true'
-    Object.assign(overlay.style, {
+    const zoomBadge = document.createElement('div')
+    zoomBadge.dataset.boardZoom = 'true'
+    Object.assign(zoomBadge.style, {
       position: 'absolute',
-      inset: '0',
-      zIndex: '2',
-      display: 'none',
-      touchAction: 'none',
-      cursor: 'grab',
-      background: 'transparent',
-      userSelect: 'none',
-      WebkitUserSelect: 'none',
+      right: '18px',
+      bottom: '18px',
+      zIndex: '4',
+      padding: '7px 10px',
+      borderRadius: '10px',
+      background: 'rgba(255,255,255,.96)',
+      border: '1px solid #e7e9ee',
+      color: '#525866',
+      fontSize: '12px',
+      fontWeight: '700',
+      pointerEvents: 'none',
     })
-    shell.appendChild(overlay)
+    shell.appendChild(zoomBadge)
+
+    const updateGrid = () => {
+      const rect = board.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      const zoom = DEFAULT_VIEW.width / view.width
+      const grid = 24 * zoom
+      const pxPerWorldX = rect.width / view.width
+      const pxPerWorldY = rect.height / view.height
+      board.style.backgroundSize = `${grid}px ${grid}px`
+      board.style.backgroundPosition = `${-view.x * pxPerWorldX}px ${-view.y * pxPerWorldY}px`
+      zoomBadge.textContent = `${Math.round(zoom * 100)}%`
+    }
 
     const applyView = () => {
       board.setAttribute('viewBox', `${view.x} ${view.y} ${view.width} ${view.height}`)
+      updateGrid()
     }
 
     const clientToWorld = (point: Point, sourceView = view): Point => {
@@ -138,55 +154,56 @@ export function Whiteboard() {
       applyView()
     }
 
-    const deactivateCurrentToolVisual = () => {
-      const buttons = Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button')).filter(item => item !== button)
-      previouslyActiveButton = buttons.find(item => {
-        const bg = getComputedStyle(item).backgroundColor
-        return bg === 'rgb(238, 240, 255)' || item.style.background.includes('#eef0ff')
-      }) ?? null
-      if (!previouslyActiveButton) return
-      previousButtonBackground = previouslyActiveButton.style.background
-      previousButtonColor = previouslyActiveButton.style.color
-      previouslyActiveButton.style.background = 'transparent'
-      previouslyActiveButton.style.color = '#525866'
+    const clearOtherToolVisual = () => {
+      const buttons = Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button')).filter(item => item !== handButton)
+      previousActive = buttons.find(item => getComputedStyle(item).backgroundColor === 'rgb(238, 240, 255)') ?? null
+      if (!previousActive) return
+      previousBackground = previousActive.style.background
+      previousColor = previousActive.style.color
+      previousActive.style.background = 'transparent'
+      previousActive.style.color = '#525866'
     }
 
-    const restoreCurrentToolVisual = () => {
-      if (!previouslyActiveButton) return
-      previouslyActiveButton.style.background = previousButtonBackground
-      previouslyActiveButton.style.color = previousButtonColor
-      previouslyActiveButton = null
+    const restoreOtherToolVisual = () => {
+      if (!previousActive) return
+      previousActive.style.background = previousBackground
+      previousActive.style.color = previousColor
+      previousActive = null
     }
 
     const setHandActive = (active: boolean) => {
       handActive = active
-      button.setAttribute('aria-pressed', String(active))
-      button.style.background = active ? '#eef0ff' : 'transparent'
-      button.style.color = active ? '#4f6df5' : '#525866'
-      overlay.style.display = active ? 'block' : 'none'
-      overlay.style.cursor = active ? 'grab' : 'default'
+      handButton.setAttribute('aria-pressed', String(active))
+      handButton.style.background = active ? '#eef0ff' : 'transparent'
+      handButton.style.color = active ? '#4f6df5' : '#525866'
+      board.style.cursor = active ? 'grab' : ''
+      board.style.touchAction = active ? 'none' : 'none'
       pointers.clear()
       lastPoint = null
       pinchStart = null
-      if (active) deactivateCurrentToolVisual()
-      else restoreCurrentToolVisual()
+      if (active) clearOtherToolVisual()
+      else restoreOtherToolVisual()
+    }
+
+    const stopBoardTool = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if ('stopImmediatePropagation' in event) event.stopImmediatePropagation()
     }
 
     const onPointerDown = (event: PointerEvent) => {
       if (!handActive) return
-      event.preventDefault()
-      event.stopPropagation()
-      overlay.setPointerCapture?.(event.pointerId)
+      stopBoardTool(event)
+      board.setPointerCapture?.(event.pointerId)
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (pointers.size === 1) lastPoint = { x: event.clientX, y: event.clientY }
       if (pointers.size === 2) startPinch()
-      overlay.style.cursor = 'grabbing'
+      board.style.cursor = 'grabbing'
     }
 
     const onPointerMove = (event: PointerEvent) => {
       if (!handActive || !pointers.has(event.pointerId)) return
-      event.preventDefault()
-      event.stopPropagation()
+      stopBoardTool(event)
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (pointers.size >= 2) {
         updatePinch()
@@ -198,11 +215,10 @@ export function Whiteboard() {
     }
 
     const endPointer = (event: PointerEvent) => {
-      if (!pointers.has(event.pointerId)) return
-      event.preventDefault()
-      event.stopPropagation()
+      if (!handActive || !pointers.has(event.pointerId)) return
+      stopBoardTool(event)
       pointers.delete(event.pointerId)
-      try { overlay.releasePointerCapture?.(event.pointerId) } catch { /* already released */ }
+      try { board.releasePointerCapture?.(event.pointerId) } catch { /* already released */ }
       if (pointers.size === 1) {
         lastPoint = Array.from(pointers.values())[0]
         pinchStart = null
@@ -211,20 +227,19 @@ export function Whiteboard() {
       } else {
         lastPoint = null
         pinchStart = null
-        overlay.style.cursor = 'grab'
+        board.style.cursor = 'grab'
       }
     }
 
     const onWheel = (event: WheelEvent) => {
       if (!handActive) return
-      event.preventDefault()
+      stopBoardTool(event)
       const rect = board.getBoundingClientRect()
       if (!rect.width || !rect.height) return
       const point = { x: event.clientX, y: event.clientY }
       const anchor = clientToWorld(point)
       const currentZoom = DEFAULT_VIEW.width / view.width
-      const factor = Math.exp(-event.deltaY * 0.0015)
-      const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * factor))
+      const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * Math.exp(-event.deltaY * 0.0015)))
       const width = DEFAULT_VIEW.width / nextZoom
       const height = DEFAULT_VIEW.height / nextZoom
       const rx = (point.x - rect.left) / rect.width
@@ -233,7 +248,7 @@ export function Whiteboard() {
       applyView()
     }
 
-    button.addEventListener('click', event => {
+    handButton.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
       setHandActive(!handActive)
@@ -242,25 +257,28 @@ export function Whiteboard() {
     const onToolbarClick = (event: Event) => {
       const target = event.target as Element | null
       const clicked = target?.closest('button') as HTMLButtonElement | null
-      if (handActive && clicked && clicked !== button) setHandActive(false)
+      if (handActive && clicked && clicked !== handButton) setHandActive(false)
     }
 
-    overlay.addEventListener('pointerdown', onPointerDown)
-    overlay.addEventListener('pointermove', onPointerMove)
-    overlay.addEventListener('pointerup', endPointer)
-    overlay.addEventListener('pointercancel', endPointer)
-    overlay.addEventListener('wheel', onWheel, { passive: false })
+    board.addEventListener('pointerdown', onPointerDown, true)
+    board.addEventListener('pointermove', onPointerMove, true)
+    board.addEventListener('pointerup', endPointer, true)
+    board.addEventListener('pointercancel', endPointer, true)
+    board.addEventListener('wheel', onWheel, { capture: true, passive: false })
     toolbar.addEventListener('click', onToolbarClick, true)
+    window.addEventListener('resize', updateGrid)
+    applyView()
 
     return () => {
-      overlay.removeEventListener('pointerdown', onPointerDown)
-      overlay.removeEventListener('pointermove', onPointerMove)
-      overlay.removeEventListener('pointerup', endPointer)
-      overlay.removeEventListener('pointercancel', endPointer)
-      overlay.removeEventListener('wheel', onWheel)
+      board.removeEventListener('pointerdown', onPointerDown, true)
+      board.removeEventListener('pointermove', onPointerMove, true)
+      board.removeEventListener('pointerup', endPointer, true)
+      board.removeEventListener('pointercancel', endPointer, true)
+      board.removeEventListener('wheel', onWheel, true)
       toolbar.removeEventListener('click', onToolbarClick, true)
-      overlay.remove()
-      button.remove()
+      window.removeEventListener('resize', updateGrid)
+      zoomBadge.remove()
+      handButton.remove()
     }
   }, [])
 
