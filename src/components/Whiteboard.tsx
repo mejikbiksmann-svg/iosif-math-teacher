@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Hand } from 'lucide-react'
 import { Whiteboard as LegacyWhiteboard } from './WhiteboardLegacy'
 
 type Point = { x: number; y: number }
