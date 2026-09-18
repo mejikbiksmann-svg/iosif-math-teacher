@@ -14,8 +14,8 @@ const navItems = [
 const homeworkStatus: Record<HomeworkStatus, string> = { 'not-started': 'Не начато', 'in-progress': 'Выполняется', completed: 'Выполнено', reviewed: 'Проверено' }
 const lessonStatus = { upcoming: 'Предстоит', completed: 'Завершён', 'in-progress': 'Идёт сейчас' }
 
-function Link({ to, children, className = '' }: { to: string; children: ReactNode; className?: string }) {
-  return <a href={routePath(to)} className={className} onClick={(event) => { if (!event.metaKey && !event.ctrlKey) { event.preventDefault(); navigate(to) } }}>{children}</a>
+function Link({ to, children, className = '', onNavigate }: { to: string; children: ReactNode; className?: string; onNavigate?: () => void }) {
+  return <a href={routePath(to)} className={className} onClick={(event) => { if (!event.metaKey && !event.ctrlKey) { event.preventDefault(); navigate(to); onNavigate?.() } }}>{children}</a>
 }
 
 function Layout({ route, children }: { route: string; children: ReactNode }) {
@@ -24,7 +24,7 @@ function Layout({ route, children }: { route: string; children: ReactNode }) {
   return <div className="dashboard-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand"><span className="brand-mark">И</span><span>Кабинет Иосифа<small>Учимся с интересом</small></span><button className="mobile-close" onClick={() => setOpen(false)} aria-label="Закрыть меню"><X /></button></div>
-      <nav>{navItems.map(([path, label, Icon]) => <Link key={path} to={path} className={route.startsWith(path) ? 'active' : ''}><Icon size={19} />{label}</Link>)}</nav>
+      <nav>{navItems.map(([path, label, Icon]) => <Link key={path} to={path} className={route.startsWith(path) ? 'active' : ''} onNavigate={() => setOpen(false)}><Icon size={19} />{label}</Link>)}</nav>
       <div className="sidebar-note">Учебный кабинет<br /><strong>{subjectLabels[selectedSubject]}</strong></div>
     </aside>
     {open && <button className="sidebar-backdrop" onClick={() => setOpen(false)} aria-label="Закрыть меню, нажав вне панели" />}
