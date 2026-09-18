@@ -1,5 +1,5 @@
 import { memo, useRef, useState } from 'react'
-import { Brush, Circle, Eraser, ImagePlus, Minus, MousePointer2, MoveRight, RotateCcw, RotateCw, Square, Trash2, Type } from 'lucide-react'
+import { Brush, Circle, Eraser, ImagePlus, Minus, MousePointer2, MoveRight, RotateCcw, RotateCw, Ruler, Square, Trash2, Type } from 'lucide-react'
 
 type Point = { x: number; y: number }
 type Stroke = { id: number; points: Point[]; color: string; width: number }
@@ -20,6 +20,11 @@ type Shape = {
 }
 type Tool = 'select' | 'pen' | 'eraser' | Exclude<ShapeKind, 'image'>
 type BoardState = { strokes: Stroke[]; shapes: Shape[] }
+type RulerState = { visible: boolean; x: number; y: number; length: number; angle: number }
+type RulerInteraction =
+  | { mode: 'move'; pointerId: number; start: Point; originX: number; originY: number }
+  | { mode: 'rotate'; pointerId: number; center: Point; startAngle: number; originAngle: number }
+  | null
 type Interaction =
   | { mode: 'draw-shape'; id: number; start: Point }
   | { mode: 'move'; id: number; start: Point; originX: number; originY: number }
@@ -76,6 +81,8 @@ export function Whiteboard() {
   const strokesRef = useRef<Stroke[]>([])
   const shapesRef = useRef<Shape[]>([])
   const interactionRef = useRef<Interaction>(null)
+  const rulerInteractionRef = useRef<RulerInteraction>(null)
+  const rulerDrawRef = useRef<{ id: number; start: Point; edgeOffset: number } | null>(null)
   const fingerScrollRef = useRef<{ pointerId: number; lastClientY: number } | null>(null)
 
   const [tool, setTool] = useState<Tool>('pen')
@@ -86,6 +93,7 @@ export function Whiteboard() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [undoStack, setUndoStack] = useState<BoardState[]>([])
   const [redoStack, setRedoStack] = useState<BoardState[]>([])
+  const [ruler, setRuler] = useState<RulerState>({ visible: false, x: 650, y: 330, length: 520, angle: 0 })
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
 
@@ -124,6 +132,34 @@ export function Whiteboard() {
   }
 
   function pointFromEvent(event: React.PointerEvent<SVGSVGElement>): Point { return pointFromClient(event.clientX, event.clientY) }
+
+  function rulerProjection(point: Point, edgeOffset: number) {
+    const angle = ruler.angle * Math.PI / 180
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const dx = point.x - ruler.x
+    const dy = point.y - ruler.y
+    const along = Math.max(-ruler.length / 2, Math.min(ruler.length / 2, dx * cos + dy * sin))
+    return {
+      x: ruler.x + along * cos - edgeOffset * sin,
+      y: ruler.y + along * sin + edgeOffset * cos,
+    }
+  }
+
+  function snapToRuler(point: Point) {
+    if (!ruler.visible) return null
+    const angle = ruler.angle * Math.PI / 180
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const dx = point.x - ruler.x
+    const dy = point.y - ruler.y
+    const along = dx * cos + dy * sin
+    const across = -dx * sin + dy * cos
+    if (Math.abs(along) > ruler.length / 2 + 18) return null
+    const edgeOffset = across >= 0 ? 22 : -22
+    if (Math.abs(across - edgeOffset) > 30) return null
+    return { point: rulerProjection(point, edgeOffset), edgeOffset }
+  }
 
   function isStylusLike(event: React.PointerEvent<SVGSVGElement>) {
     if (event.pointerType === 'pen') return true
@@ -263,6 +299,16 @@ export function Whiteboard() {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromEvent(event)
+    const rulerSnap = tool === 'pen' ? snapToRuler(point) : null
+    if (rulerSnap) {
+      drawingRef.current = true
+      snapshot()
+      const id = Date.now() + Math.random()
+      activeStrokeIdRef.current = id
+      rulerDrawRef.current = { id, start: rulerSnap.point, edgeOffset: rulerSnap.edgeOffset }
+      setStrokeState([...strokesRef.current, { id, points: [rulerSnap.point, rulerSnap.point], color, width }])
+      return
+    }
     if (tool === 'select') { setSelectedId(null); interactionRef.current = null; return }
     if (tool === 'text') {
       const value = window.prompt('Введите текст')
@@ -300,6 +346,31 @@ export function Whiteboard() {
     }
 
     const point = pointFromEvent(event)
+
+    const rulerInteraction = rulerInteractionRef.current
+    if (rulerInteraction && rulerInteraction.pointerId === event.pointerId) {
+      event.preventDefault()
+      if (rulerInteraction.mode === 'move') {
+        setRuler(current => ({
+          ...current,
+          x: rulerInteraction.originX + point.x - rulerInteraction.start.x,
+          y: rulerInteraction.originY + point.y - rulerInteraction.start.y,
+        }))
+      } else {
+        const angle = Math.atan2(point.y - rulerInteraction.center.y, point.x - rulerInteraction.center.x) * 180 / Math.PI
+        setRuler(current => ({ ...current, angle: rulerInteraction.originAngle + angle - rulerInteraction.startAngle }))
+      }
+      return
+    }
+
+    const rulerDraw = rulerDrawRef.current
+    if (drawingRef.current && rulerDraw && tool === 'pen') {
+      event.preventDefault()
+      const projected = rulerProjection(point, rulerDraw.edgeOffset)
+      setStrokeState(current => current.map(stroke => stroke.id === rulerDraw.id ? { ...stroke, points: [rulerDraw.start, projected] } : stroke))
+      return
+    }
+
     const interaction = interactionRef.current
     if (interaction) {
       event.preventDefault()
@@ -345,8 +416,31 @@ export function Whiteboard() {
       return
     }
     if (animationFrameRef.current != null) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; flushScheduledWork() }
-    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null
+    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
+  }
+
+  function beginRulerMove(event: React.PointerEvent<SVGCircleElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    const start = pointFromClient(event.clientX, event.clientY)
+    rulerInteractionRef.current = { mode: 'move', pointerId: event.pointerId, start, originX: ruler.x, originY: ruler.y }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginRulerRotate(event: React.PointerEvent<SVGCircleElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    const point = pointFromClient(event.clientX, event.clientY)
+    const center = { x: ruler.x, y: ruler.y }
+    rulerInteractionRef.current = {
+      mode: 'rotate',
+      pointerId: event.pointerId,
+      center,
+      startAngle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI,
+      originAngle: ruler.angle,
+    }
+    svgRef.current?.setPointerCapture(event.pointerId)
   }
 
   function beginMove(event: React.PointerEvent<SVGGElement>, shape: Shape) {
@@ -413,6 +507,7 @@ export function Whiteboard() {
         <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
         <button title="Стилус" aria-label="Стилус" style={toolButton(tool === 'pen')} onClick={() => setTool('pen')}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
+        <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => setRuler(current => ({ ...current, visible: !current.visible }))}><Ruler size={21} /></button>
         <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
         <button title="Добавить изображение" aria-label="Добавить изображение" style={toolButton()} onClick={() => fileInputRef.current?.click()}><ImagePlus size={21} /></button>
         <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
@@ -429,6 +524,18 @@ export function Whiteboard() {
       <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current || fingerScrollRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
+        {ruler.visible && <g transform={`translate(${ruler.x} ${ruler.y}) rotate(${ruler.angle})`}>
+          <rect x={-ruler.length / 2} y={-22} width={ruler.length} height={44} rx={7} fill="rgba(255, 221, 87, .42)" stroke="#c89f1d" strokeWidth={2} />
+          {Array.from({ length: 27 }, (_, index) => {
+            const x = -ruler.length / 2 + index * (ruler.length / 26)
+            const major = index % 5 === 0
+            return <line key={index} x1={x} y1={-22} x2={x} y2={major ? -4 : -11} stroke="#8b6d15" strokeWidth={major ? 2 : 1} />
+          })}
+          <line x1={-ruler.length / 2} y1={22} x2={ruler.length / 2} y2={22} stroke="#8b6d15" strokeWidth={2} opacity={0.75} />
+          <circle cx={0} cy={0} r={13} fill="#fff" stroke="#c89f1d" strokeWidth={3} onPointerDown={beginRulerMove} style={{ cursor: 'move' }} />
+          <line x1={ruler.length / 2} y1={0} x2={ruler.length / 2 + 34} y2={0} stroke="#c89f1d" strokeWidth={2} />
+          <circle cx={ruler.length / 2 + 42} cy={0} r={10} fill="#fff" stroke="#c89f1d" strokeWidth={3} onPointerDown={beginRulerRotate} style={{ cursor: 'grab' }} />
+        </g>}
       </svg>
 
       <div style={{ position: 'absolute', zIndex: 3, left: '50%', bottom: 18, transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
@@ -440,6 +547,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 3: изображения можно загрузить кнопкой, перетащить на доску или вставить из буфера. Картинки перемещаются, масштабируются с сохранением пропорций, вращаются и участвуют в undo/redo.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 4: добавлена учебная линейка. Её можно перемещать центральной ручкой, вращать боковой ручкой и проводить стилусом ровную линию вдоль верхней или нижней кромки.</p>
   </div>
 }
