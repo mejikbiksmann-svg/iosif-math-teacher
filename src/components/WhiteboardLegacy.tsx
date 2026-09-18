@@ -30,6 +30,11 @@ type ProtractorInteraction =
   | { mode: 'move'; pointerId: number; start: Point; originX: number; originY: number }
   | { mode: 'rotate'; pointerId: number; center: Point; startAngle: number; originAngle: number }
   | null
+type CompassState = { visible: boolean; x: number; y: number; radius: number }
+type CompassInteraction =
+  | { mode: 'move'; pointerId: number; start: Point; originX: number; originY: number }
+  | { mode: 'radius'; pointerId: number; center: Point }
+  | null
 type Interaction =
   | { mode: 'draw-shape'; id: number; start: Point }
   | { mode: 'move'; id: number; start: Point; originX: number; originY: number }
@@ -90,6 +95,7 @@ export function Whiteboard() {
   const rulerDrawRef = useRef<{ id: number; start: Point; edgeOffset: number } | null>(null)
   const protractorInteractionRef = useRef<ProtractorInteraction>(null)
   const protractorDrawRef = useRef<{ id: number } | null>(null)
+  const compassInteractionRef = useRef<CompassInteraction>(null)
   const fingerScrollRef = useRef<{ pointerId: number; lastClientY: number } | null>(null)
 
   const [tool, setTool] = useState<Tool>('pen')
@@ -104,6 +110,8 @@ export function Whiteboard() {
   const [rulerDrawEnabled, setRulerDrawEnabled] = useState(false)
   const [protractor, setProtractor] = useState<ProtractorState>({ visible: false, x: 650, y: 410, radius: 210, angle: 0 })
   const [protractorDrawEnabled, setProtractorDrawEnabled] = useState(false)
+  const [compass, setCompass] = useState<CompassState>({ visible: false, x: 650, y: 340, radius: 140 })
+  const [compassDrawEnabled, setCompassDrawEnabled] = useState(false)
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
 
@@ -328,6 +336,10 @@ export function Whiteboard() {
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (compass.visible && !compassDrawEnabled) {
+      event.preventDefault()
+      return
+    }
     if (protractor.visible && !protractorDrawEnabled) {
       event.preventDefault()
       return
@@ -345,6 +357,25 @@ export function Whiteboard() {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromEvent(event)
+    if (compass.visible && compassDrawEnabled && tool === 'pen') {
+      event.preventDefault()
+      snapshot()
+      const shape: Shape = {
+        id: Date.now() + Math.random(),
+        kind: 'ellipse',
+        x: compass.x - compass.radius,
+        y: compass.y - compass.radius,
+        w: compass.radius * 2,
+        h: compass.radius * 2,
+        rotation: 0,
+        color,
+        width,
+      }
+      setShapeState(current => [...current, shape])
+      setSelectedId(shape.id)
+      setCompassDrawEnabled(false)
+      return
+    }
     const protractorSnap = tool === 'pen' ? protractorRay(point) : null
     if (protractor.visible && protractorDrawEnabled && tool === 'pen' && !protractorSnap) {
       event.preventDefault()
@@ -410,6 +441,22 @@ export function Whiteboard() {
     }
 
     const point = pointFromEvent(event)
+
+    const compassInteraction = compassInteractionRef.current
+    if (compassInteraction && compassInteraction.pointerId === event.pointerId) {
+      event.preventDefault()
+      if (compassInteraction.mode === 'move') {
+        setCompass(current => ({
+          ...current,
+          x: compassInteraction.originX + point.x - compassInteraction.start.x,
+          y: compassInteraction.originY + point.y - compassInteraction.start.y,
+        }))
+      } else {
+        const radius = Math.max(45, Math.min(280, Math.hypot(point.x - compassInteraction.center.x, point.y - compassInteraction.center.y)))
+        setCompass(current => ({ ...current, radius }))
+      }
+      return
+    }
 
     const protractorInteraction = protractorInteractionRef.current
     if (protractorInteraction && protractorInteraction.pointerId === event.pointerId) {
@@ -506,7 +553,7 @@ export function Whiteboard() {
       return
     }
     if (animationFrameRef.current != null) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; flushScheduledWork() }
-    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null; protractorInteractionRef.current = null; protractorDrawRef.current = null
+    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null; protractorInteractionRef.current = null; protractorDrawRef.current = null; compassInteractionRef.current = null
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
   }
 
@@ -553,6 +600,21 @@ export function Whiteboard() {
       startAngle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI,
       originAngle: protractor.angle,
     }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginCompassMove(event: React.PointerEvent<SVGCircleElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    const start = pointFromClient(event.clientX, event.clientY)
+    compassInteractionRef.current = { mode: 'move', pointerId: event.pointerId, start, originX: compass.x, originY: compass.y }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginCompassRadius(event: React.PointerEvent<SVGCircleElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    compassInteractionRef.current = { mode: 'radius', pointerId: event.pointerId, center: { x: compass.x, y: compass.y } }
     svgRef.current?.setPointerCapture(event.pointerId)
   }
 
@@ -618,7 +680,7 @@ export function Whiteboard() {
     <div style={{ position: 'relative', minHeight: 560, border: '1px solid #e6e8ec', borderRadius: 22, overflow: 'hidden', background: '#f8f9fb', boxShadow: '0 18px 40px rgba(38, 43, 52, .08)' }}>
       <div style={{ position: 'absolute', zIndex: 3, top: 14, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 6, maxWidth: 'calc(100% - 28px)', overflowX: 'auto', overflowY: 'hidden', padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
-        <button title={ruler.visible ? 'Рисовать по линейке' : protractor.visible ? 'Рисовать по транспортиру' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && ((!ruler.visible || rulerDrawEnabled) && (!protractor.visible || protractorDrawEnabled)))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true); if (protractor.visible) setProtractorDrawEnabled(true) }}><Brush size={21} /></button>
+        <button title={ruler.visible ? 'Рисовать по линейке' : protractor.visible ? 'Рисовать по транспортиру' : compass.visible ? 'Начертить окружность циркулем' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && ((!ruler.visible || rulerDrawEnabled) && (!protractor.visible || protractorDrawEnabled) && (!compass.visible || compassDrawEnabled)))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true); if (protractor.visible) setProtractorDrawEnabled(true); if (compass.visible) setCompassDrawEnabled(true) }}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
         <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setProtractorDrawEnabled(false); setProtractor(current => ({ ...current, visible: false })); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
         <button title="Транспортир" aria-label="Транспортир" aria-pressed={protractor.visible} style={toolButton(protractor.visible)} onClick={() => { setProtractorDrawEnabled(false); setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: !current.visible })) }}>
@@ -626,6 +688,12 @@ export function Whiteboard() {
             <path d="M3 17a9 9 0 0 1 18 0H3Z" />
             <path d="M12 17V8" />
             <path d="M7.5 15.5l-1.5-2.2M16.5 15.5l1.5-2.2M9.7 12.8l-1-2.5M14.3 12.8l1-2.5" />
+          </svg>
+        </button>
+        <button title="Циркуль" aria-label="Циркуль" aria-pressed={compass.visible} style={toolButton(compass.visible)} onClick={() => { setCompassDrawEnabled(false); setRulerDrawEnabled(false); setProtractorDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: false })); setCompass(current => ({ ...current, visible: !current.visible })) }}>
+          <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="4.5" r="2" />
+            <path d="M11 6.2L6.5 20M13 6.2L17.5 20M9.6 10h4.8" />
           </svg>
         </button>
         <div aria-hidden="true" style={{ width: 1, height: 28, flex: '0 0 1px', background: '#eceef2', margin: '0 3px' }} />
@@ -644,6 +712,13 @@ export function Whiteboard() {
       <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current || fingerScrollRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
+        {compass.visible && <g>
+          <circle cx={compass.x} cy={compass.y} r={compass.radius} fill="none" stroke="rgba(106,76,147,.55)" strokeWidth={2} strokeDasharray="7 6" />
+          <line x1={compass.x} y1={compass.y} x2={compass.x + compass.radius} y2={compass.y} stroke="#6a4c93" strokeWidth={2} />
+          <circle cx={compass.x} cy={compass.y} r={14} fill="#fff" stroke="#6a4c93" strokeWidth={3} onPointerDown={beginCompassMove} style={{ cursor: 'move' }} />
+          <circle cx={compass.x + compass.radius} cy={compass.y} r={11} fill="#fff" stroke="#6a4c93" strokeWidth={3} onPointerDown={beginCompassRadius} style={{ cursor: 'ew-resize' }} />
+          <text x={compass.x + 18} y={compass.y - 12} fontSize={13} fill="#6a4c93">{Math.round(compass.radius)} ед.</text>
+        </g>}
         {protractor.visible && <g transform={`translate(${protractor.x} ${protractor.y}) rotate(${protractor.angle})`}>
           <path d={`M ${-protractor.radius} 0 A ${protractor.radius} ${protractor.radius} 0 0 1 ${protractor.radius} 0 L ${-protractor.radius} 0 Z`} fill="rgba(126, 200, 255, .18)" stroke="#4f8ecf" strokeWidth={2} />
           <line x1={-protractor.radius} y1={0} x2={protractor.radius} y2={0} stroke="#4f8ecf" strokeWidth={2} />
@@ -691,6 +766,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 5: добавлен транспортир. Его можно перемещать за центр, вращать с любого края и использовать в жёстком режиме: сначала выставить, затем нажать «Стилус». Лучи строятся от центра с привязкой к 5°.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 6: добавлен циркуль. Сначала выставь центр и радиус, затем нажми «Стилус» и коснись доски — будет построена точная окружность заданного радиуса.</p>
   </div>
 }
