@@ -1,5 +1,5 @@
 import { memo, useRef, useState } from 'react'
-import { Brush, Circle, Eraser, ImagePlus, Minus, MousePointer2, MoveRight, RotateCcw, RotateCw, Ruler, Square, Trash2, Type } from 'lucide-react'
+import { Brush, Circle, Eraser, ImagePlus, Minus, MousePointer2, MoveRight, Protractor, RotateCcw, RotateCw, Ruler, Square, Trash2, Type } from 'lucide-react'
 
 type Point = { x: number; y: number }
 type Stroke = { id: number; points: Point[]; color: string; width: number }
@@ -22,6 +22,11 @@ type Tool = 'select' | 'pen' | 'eraser' | Exclude<ShapeKind, 'image'>
 type BoardState = { strokes: Stroke[]; shapes: Shape[] }
 type RulerState = { visible: boolean; x: number; y: number; length: number; angle: number }
 type RulerInteraction =
+  | { mode: 'move'; pointerId: number; start: Point; originX: number; originY: number }
+  | { mode: 'rotate'; pointerId: number; center: Point; startAngle: number; originAngle: number }
+  | null
+type ProtractorState = { visible: boolean; x: number; y: number; radius: number; angle: number }
+type ProtractorInteraction =
   | { mode: 'move'; pointerId: number; start: Point; originX: number; originY: number }
   | { mode: 'rotate'; pointerId: number; center: Point; startAngle: number; originAngle: number }
   | null
@@ -83,6 +88,8 @@ export function Whiteboard() {
   const interactionRef = useRef<Interaction>(null)
   const rulerInteractionRef = useRef<RulerInteraction>(null)
   const rulerDrawRef = useRef<{ id: number; start: Point; edgeOffset: number } | null>(null)
+  const protractorInteractionRef = useRef<ProtractorInteraction>(null)
+  const protractorDrawRef = useRef<{ id: number } | null>(null)
   const fingerScrollRef = useRef<{ pointerId: number; lastClientY: number } | null>(null)
 
   const [tool, setTool] = useState<Tool>('pen')
@@ -95,6 +102,8 @@ export function Whiteboard() {
   const [redoStack, setRedoStack] = useState<BoardState[]>([])
   const [ruler, setRuler] = useState<RulerState>({ visible: false, x: 650, y: 330, length: 520, angle: 0 })
   const [rulerDrawEnabled, setRulerDrawEnabled] = useState(false)
+  const [protractor, setProtractor] = useState<ProtractorState>({ visible: false, x: 650, y: 410, radius: 210, angle: 0 })
+  const [protractorDrawEnabled, setProtractorDrawEnabled] = useState(false)
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
 
@@ -160,6 +169,34 @@ export function Whiteboard() {
     const edgeOffset = across >= 0 ? 22 : -22
     if (Math.abs(across - edgeOffset) > 30) return null
     return { point: rulerProjection(point, edgeOffset), edgeOffset }
+  }
+
+  function protractorRay(point: Point) {
+    if (!protractor.visible) return null
+    const angle = protractor.angle * Math.PI / 180
+    const cos = Math.cos(-angle)
+    const sin = Math.sin(-angle)
+    const dx = point.x - protractor.x
+    const dy = point.y - protractor.y
+    const localX = dx * cos - dy * sin
+    const localY = dx * sin + dy * cos
+    const distance = Math.hypot(localX, localY)
+    if (distance > protractor.radius + 55 || localY > 35) return null
+    const raw = Math.atan2(-localY, localX) * 180 / Math.PI
+    const degree = Math.max(0, Math.min(180, Math.round(raw / 5) * 5))
+    const theta = degree * Math.PI / 180
+    const localEndX = Math.cos(theta) * protractor.radius
+    const localEndY = -Math.sin(theta) * protractor.radius
+    const worldCos = Math.cos(angle)
+    const worldSin = Math.sin(angle)
+    return {
+      start: { x: protractor.x, y: protractor.y },
+      end: {
+        x: protractor.x + localEndX * worldCos - localEndY * worldSin,
+        y: protractor.y + localEndX * worldSin + localEndY * worldCos,
+      },
+      degree,
+    }
   }
 
   function isStylusLike(event: React.PointerEvent<SVGSVGElement>) {
@@ -291,6 +328,10 @@ export function Whiteboard() {
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (protractor.visible && !protractorDrawEnabled) {
+      event.preventDefault()
+      return
+    }
     if (ruler.visible && !rulerDrawEnabled) {
       event.preventDefault()
       return
@@ -304,6 +345,20 @@ export function Whiteboard() {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromEvent(event)
+    const protractorSnap = tool === 'pen' ? protractorRay(point) : null
+    if (protractor.visible && protractorDrawEnabled && tool === 'pen' && !protractorSnap) {
+      event.preventDefault()
+      return
+    }
+    if (protractorSnap) {
+      drawingRef.current = true
+      snapshot()
+      const id = Date.now() + Math.random()
+      activeStrokeIdRef.current = id
+      protractorDrawRef.current = { id }
+      setStrokeState([...strokesRef.current, { id, points: [protractorSnap.start, protractorSnap.end], color, width }])
+      return
+    }
     const rulerSnap = tool === 'pen' ? snapToRuler(point) : null
     if (ruler.visible && rulerDrawEnabled && tool === 'pen' && !rulerSnap) {
       event.preventDefault()
@@ -355,6 +410,32 @@ export function Whiteboard() {
     }
 
     const point = pointFromEvent(event)
+
+    const protractorInteraction = protractorInteractionRef.current
+    if (protractorInteraction && protractorInteraction.pointerId === event.pointerId) {
+      event.preventDefault()
+      if (protractorInteraction.mode === 'move') {
+        setProtractor(current => ({
+          ...current,
+          x: protractorInteraction.originX + point.x - protractorInteraction.start.x,
+          y: protractorInteraction.originY + point.y - protractorInteraction.start.y,
+        }))
+      } else {
+        const angle = Math.atan2(point.y - protractorInteraction.center.y, point.x - protractorInteraction.center.x) * 180 / Math.PI
+        setProtractor(current => ({ ...current, angle: protractorInteraction.originAngle + angle - protractorInteraction.startAngle }))
+      }
+      return
+    }
+
+    const protractorDraw = protractorDrawRef.current
+    if (drawingRef.current && protractorDraw && tool === 'pen') {
+      event.preventDefault()
+      const snap = protractorRay(point)
+      if (snap) {
+        setStrokeState(current => current.map(stroke => stroke.id === protractorDraw.id ? { ...stroke, points: [snap.start, snap.end] } : stroke))
+      }
+      return
+    }
 
     const rulerInteraction = rulerInteractionRef.current
     if (rulerInteraction && rulerInteraction.pointerId === event.pointerId) {
@@ -425,7 +506,7 @@ export function Whiteboard() {
       return
     }
     if (animationFrameRef.current != null) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; flushScheduledWork() }
-    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null
+    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null; protractorInteractionRef.current = null; protractorDrawRef.current = null
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
   }
 
@@ -448,6 +529,29 @@ export function Whiteboard() {
       center,
       startAngle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI,
       originAngle: ruler.angle,
+    }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginProtractorMove(event: React.PointerEvent<SVGCircleElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    const start = pointFromClient(event.clientX, event.clientY)
+    protractorInteractionRef.current = { mode: 'move', pointerId: event.pointerId, start, originX: protractor.x, originY: protractor.y }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  function beginProtractorRotate(event: React.PointerEvent<SVGCircleElement>) {
+    event.stopPropagation()
+    event.preventDefault()
+    const point = pointFromClient(event.clientX, event.clientY)
+    const center = { x: protractor.x, y: protractor.y }
+    protractorInteractionRef.current = {
+      mode: 'rotate',
+      pointerId: event.pointerId,
+      center,
+      startAngle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI,
+      originAngle: protractor.angle,
     }
     svgRef.current?.setPointerCapture(event.pointerId)
   }
@@ -514,9 +618,10 @@ export function Whiteboard() {
     <div style={{ position: 'relative', minHeight: 560, border: '1px solid #e6e8ec', borderRadius: 22, overflow: 'hidden', background: '#f8f9fb', boxShadow: '0 18px 40px rgba(38, 43, 52, .08)' }}>
       <div style={{ position: 'absolute', zIndex: 3, top: 18, left: 18, display: 'grid', gap: 6, padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
         <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
-        <button title={ruler.visible ? 'Рисовать по линейке' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && (!ruler.visible || rulerDrawEnabled))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true) }}><Brush size={21} /></button>
+        <button title={ruler.visible ? 'Рисовать по линейке' : protractor.visible ? 'Рисовать по транспортиру' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && ((!ruler.visible || rulerDrawEnabled) && (!protractor.visible || protractorDrawEnabled)))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true); if (protractor.visible) setProtractorDrawEnabled(true) }}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
-        <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
+        <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setProtractorDrawEnabled(false); setProtractor(current => ({ ...current, visible: false })); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
+        <button title="Транспортир" aria-label="Транспортир" aria-pressed={protractor.visible} style={toolButton(protractor.visible)} onClick={() => { setProtractorDrawEnabled(false); setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: !current.visible })) }}><Protractor size={21} /></button>
         <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
         <button title="Добавить изображение" aria-label="Добавить изображение" style={toolButton()} onClick={() => fileInputRef.current?.click()}><ImagePlus size={21} /></button>
         <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
@@ -533,6 +638,28 @@ export function Whiteboard() {
       <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current || fingerScrollRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
+        {protractor.visible && <g transform={`translate(${protractor.x} ${protractor.y}) rotate(${protractor.angle})`}>
+          <path d={`M ${-protractor.radius} 0 A ${protractor.radius} ${protractor.radius} 0 0 1 ${protractor.radius} 0 L ${-protractor.radius} 0 Z`} fill="rgba(126, 200, 255, .18)" stroke="#4f8ecf" strokeWidth={2} />
+          <line x1={-protractor.radius} y1={0} x2={protractor.radius} y2={0} stroke="#4f8ecf" strokeWidth={2} />
+          {Array.from({ length: 37 }, (_, index) => {
+            const degree = index * 5
+            const theta = degree * Math.PI / 180
+            const outerX = Math.cos(theta) * protractor.radius
+            const outerY = -Math.sin(theta) * protractor.radius
+            const tick = degree % 30 === 0 ? 22 : degree % 10 === 0 ? 14 : 8
+            const innerX = Math.cos(theta) * (protractor.radius - tick)
+            const innerY = -Math.sin(theta) * (protractor.radius - tick)
+            return <g key={degree}>
+              <line x1={innerX} y1={innerY} x2={outerX} y2={outerY} stroke="#2f6fae" strokeWidth={degree % 30 === 0 ? 2 : 1} />
+              {degree % 30 === 0 && <text x={Math.cos(theta) * (protractor.radius - 38)} y={-Math.sin(theta) * (protractor.radius - 38) + 5} textAnchor="middle" fontSize={14} fill="#2f6fae">{degree}°</text>}
+            </g>
+          })}
+          <circle cx={0} cy={0} r={14} fill="#fff" stroke="#4f8ecf" strokeWidth={3} onPointerDown={beginProtractorMove} style={{ cursor: 'move' }} />
+          <line x1={-protractor.radius} y1={0} x2={-protractor.radius - 32} y2={0} stroke="#4f8ecf" strokeWidth={2} />
+          <circle cx={-protractor.radius - 40} cy={0} r={10} fill="#fff" stroke="#4f8ecf" strokeWidth={3} onPointerDown={beginProtractorRotate} style={{ cursor: 'grab' }} />
+          <line x1={protractor.radius} y1={0} x2={protractor.radius + 32} y2={0} stroke="#4f8ecf" strokeWidth={2} />
+          <circle cx={protractor.radius + 40} cy={0} r={10} fill="#fff" stroke="#4f8ecf" strokeWidth={3} onPointerDown={beginProtractorRotate} style={{ cursor: 'grab' }} />
+        </g>}
         {ruler.visible && <g transform={`translate(${ruler.x} ${ruler.y}) rotate(${ruler.angle})`}>
           <rect x={-ruler.length / 2} y={-22} width={ruler.length} height={44} rx={7} fill="rgba(255, 221, 87, .42)" stroke="#c89f1d" strokeWidth={2} />
           {Array.from({ length: 27 }, (_, index) => {
@@ -558,6 +685,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 4: включи линейку, сначала выставь её положение и угол. Рисование в этот момент заблокировано. Затем нажми «Стилус» — он перейдёт в режим «Рисовать по линейке», и линия будет проводиться только вдоль её кромки.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 5: добавлен транспортир. Его можно перемещать за центр, вращать с любого края и использовать в жёстком режиме: сначала выставить, затем нажать «Стилус». Лучи строятся от центра с привязкой к 5°.</p>
   </div>
 }
