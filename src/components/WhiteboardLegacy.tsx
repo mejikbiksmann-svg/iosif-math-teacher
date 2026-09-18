@@ -590,7 +590,7 @@ export function Whiteboard() {
   function clearBoard() { if (!strokesRef.current.length && !shapesRef.current.length) return; snapshot(); setStrokeState([]); setShapeState([]); setSelectedId(null) }
   function deleteSelected() { if (selectedId == null) return; snapshot(); setShapeState(current => current.filter(shape => shape.id !== selectedId)); setSelectedId(null) }
 
-  const toolButton = (active = false): React.CSSProperties => ({ width: 44, height: 44, border: 0, borderRadius: 12, display: 'grid', placeItems: 'center', background: active ? '#eef0ff' : 'transparent', color: active ? '#4f6df5' : '#525866', cursor: 'pointer' })
+  const toolButton = (active = false): React.CSSProperties => ({ width: 44, height: 44, flex: '0 0 44px', border: 0, borderRadius: 12, display: 'grid', placeItems: 'center', background: active ? '#eef0ff' : 'transparent', color: active ? '#4f6df5' : '#525866', cursor: 'pointer' })
 
   function renderShape(shape: Shape) {
     const selected = selectedId === shape.id
@@ -616,20 +616,20 @@ export function Whiteboard() {
   return <div style={{ position: 'relative' }} onDragOver={event => event.preventDefault()} onDrop={handleDrop} onPaste={handlePaste} tabIndex={0}>
     <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageInput} style={{ display: 'none' }} />
     <div style={{ position: 'relative', minHeight: 560, border: '1px solid #e6e8ec', borderRadius: 22, overflow: 'hidden', background: '#f8f9fb', boxShadow: '0 18px 40px rgba(38, 43, 52, .08)' }}>
-      <div style={{ position: 'absolute', zIndex: 3, top: 18, left: 18, display: 'grid', gap: 6, padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
+      <div style={{ position: 'absolute', zIndex: 3, top: 14, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 6, maxWidth: 'calc(100% - 28px)', overflowX: 'auto', overflowY: 'hidden', padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
         <button title={ruler.visible ? 'Рисовать по линейке' : protractor.visible ? 'Рисовать по транспортиру' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && ((!ruler.visible || rulerDrawEnabled) && (!protractor.visible || protractorDrawEnabled)))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true); if (protractor.visible) setProtractorDrawEnabled(true) }}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
         <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setProtractorDrawEnabled(false); setProtractor(current => ({ ...current, visible: false })); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
         <button title="Транспортир" aria-label="Транспортир" aria-pressed={protractor.visible} style={toolButton(protractor.visible)} onClick={() => { setProtractorDrawEnabled(false); setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: !current.visible })) }}><Circle size={21} /></button>
-        <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
+        <div aria-hidden="true" style={{ width: 1, height: 28, flex: '0 0 1px', background: '#eceef2', margin: '0 3px' }} />
         <button title="Добавить изображение" aria-label="Добавить изображение" style={toolButton()} onClick={() => fileInputRef.current?.click()}><ImagePlus size={21} /></button>
         <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
         <button title="Линия" aria-label="Линия" style={toolButton(tool === 'line')} onClick={() => setTool('line')}><Minus size={21} /></button>
         <button title="Стрелка" aria-label="Стрелка" style={toolButton(tool === 'arrow')} onClick={() => setTool('arrow')}><MoveRight size={21} /></button>
         <button title="Прямоугольник" aria-label="Прямоугольник" style={toolButton(tool === 'rect')} onClick={() => setTool('rect')}><Square size={21} /></button>
         <button title="Эллипс" aria-label="Эллипс" style={toolButton(tool === 'ellipse')} onClick={() => setTool('ellipse')}><Circle size={21} /></button>
-        <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
+        <div aria-hidden="true" style={{ width: 1, height: 28, flex: '0 0 1px', background: '#eceef2', margin: '0 3px' }} />
         <button title="Отменить" aria-label="Отменить" style={{ ...toolButton(), opacity: canUndo ? 1 : .35 }} disabled={!canUndo} onClick={undo}><RotateCcw size={20} /></button>
         <button title="Вернуть" aria-label="Вернуть" style={{ ...toolButton(), opacity: canRedo ? 1 : .35 }} disabled={!canRedo} onClick={redo}><RotateCw size={20} /></button>
         <button title={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} aria-label={selectedId == null ? 'Очистить доску' : 'Удалить выбранное'} style={{ ...toolButton(), color: '#d04f4f' }} onClick={selectedId == null ? clearBoard : deleteSelected}><Trash2 size={20} /></button>
