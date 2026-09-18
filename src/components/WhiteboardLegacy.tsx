@@ -542,6 +542,8 @@ export function Whiteboard() {
           })}
           <line x1={-ruler.length / 2} y1={22} x2={ruler.length / 2} y2={22} stroke="#8b6d15" strokeWidth={2} opacity={0.75} />
           <circle cx={0} cy={0} r={13} fill="#fff" stroke="#c89f1d" strokeWidth={3} onPointerDown={beginRulerMove} style={{ cursor: 'move' }} />
+          <line x1={-ruler.length / 2} y1={0} x2={-ruler.length / 2 - 34} y2={0} stroke="#c89f1d" strokeWidth={2} />
+          <circle cx={-ruler.length / 2 - 42} cy={0} r={10} fill="#fff" stroke="#c89f1d" strokeWidth={3} onPointerDown={beginRulerRotate} style={{ cursor: 'grab' }} />
           <line x1={ruler.length / 2} y1={0} x2={ruler.length / 2 + 34} y2={0} stroke="#c89f1d" strokeWidth={2} />
           <circle cx={ruler.length / 2 + 42} cy={0} r={10} fill="#fff" stroke="#c89f1d" strokeWidth={3} onPointerDown={beginRulerRotate} style={{ cursor: 'grab' }} />
         </g>}
