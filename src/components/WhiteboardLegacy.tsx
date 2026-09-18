@@ -621,7 +621,13 @@ export function Whiteboard() {
         <button title={ruler.visible ? 'Рисовать по линейке' : protractor.visible ? 'Рисовать по транспортиру' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && ((!ruler.visible || rulerDrawEnabled) && (!protractor.visible || protractorDrawEnabled)))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true); if (protractor.visible) setProtractorDrawEnabled(true) }}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
         <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setProtractorDrawEnabled(false); setProtractor(current => ({ ...current, visible: false })); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
-        <button title="Транспортир" aria-label="Транспортир" aria-pressed={protractor.visible} style={toolButton(protractor.visible)} onClick={() => { setProtractorDrawEnabled(false); setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: !current.visible })) }}><Circle size={21} /></button>
+        <button title="Транспортир" aria-label="Транспортир" aria-pressed={protractor.visible} style={toolButton(protractor.visible)} onClick={() => { setProtractorDrawEnabled(false); setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: !current.visible })) }}>
+          <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 17a9 9 0 0 1 18 0H3Z" />
+            <path d="M12 17V8" />
+            <path d="M7.5 15.5l-1.5-2.2M16.5 15.5l1.5-2.2M9.7 12.8l-1-2.5M14.3 12.8l1-2.5" />
+          </svg>
+        </button>
         <div aria-hidden="true" style={{ width: 1, height: 28, flex: '0 0 1px', background: '#eceef2', margin: '0 3px' }} />
         <button title="Добавить изображение" aria-label="Добавить изображение" style={toolButton()} onClick={() => fileInputRef.current?.click()}><ImagePlus size={21} /></button>
         <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
