@@ -94,6 +94,7 @@ export function Whiteboard() {
   const [undoStack, setUndoStack] = useState<BoardState[]>([])
   const [redoStack, setRedoStack] = useState<BoardState[]>([])
   const [ruler, setRuler] = useState<RulerState>({ visible: false, x: 650, y: 330, length: 520, angle: 0 })
+  const [rulerDrawEnabled, setRulerDrawEnabled] = useState(false)
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
 
@@ -290,6 +291,10 @@ export function Whiteboard() {
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (ruler.visible && !rulerDrawEnabled) {
+      event.preventDefault()
+      return
+    }
     if (tool === 'pen' && isFingerTouch(event)) {
       event.preventDefault()
       fingerScrollRef.current = { pointerId: event.pointerId, lastClientY: event.clientY }
@@ -300,6 +305,10 @@ export function Whiteboard() {
     event.currentTarget.setPointerCapture(event.pointerId)
     const point = pointFromEvent(event)
     const rulerSnap = tool === 'pen' ? snapToRuler(point) : null
+    if (ruler.visible && rulerDrawEnabled && tool === 'pen' && !rulerSnap) {
+      event.preventDefault()
+      return
+    }
     if (rulerSnap) {
       drawingRef.current = true
       snapshot()
@@ -505,9 +514,9 @@ export function Whiteboard() {
     <div style={{ position: 'relative', minHeight: 560, border: '1px solid #e6e8ec', borderRadius: 22, overflow: 'hidden', background: '#f8f9fb', boxShadow: '0 18px 40px rgba(38, 43, 52, .08)' }}>
       <div style={{ position: 'absolute', zIndex: 3, top: 18, left: 18, display: 'grid', gap: 6, padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
         <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
-        <button title="Стилус" aria-label="Стилус" style={toolButton(tool === 'pen')} onClick={() => setTool('pen')}><Brush size={21} /></button>
+        <button title={ruler.visible ? 'Рисовать по линейке' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && (!ruler.visible || rulerDrawEnabled))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true) }}><Brush size={21} /></button>
         <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
-        <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => setRuler(current => ({ ...current, visible: !current.visible }))}><Ruler size={21} /></button>
+        <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
         <div style={{ height: 1, background: '#eceef2', margin: '2px 4px' }} />
         <button title="Добавить изображение" aria-label="Добавить изображение" style={toolButton()} onClick={() => fileInputRef.current?.click()}><ImagePlus size={21} /></button>
         <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
@@ -547,6 +556,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 4: добавлена учебная линейка. Её можно перемещать центральной ручкой, вращать боковой ручкой и проводить стилусом ровную линию вдоль верхней или нижней кромки.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 4: включи линейку, сначала выставь её положение и угол. Рисование в этот момент заблокировано. Затем нажми «Стилус» — он перейдёт в режим «Рисовать по линейке», и линия будет проводиться только вдоль её кромки.</p>
   </div>
 }
