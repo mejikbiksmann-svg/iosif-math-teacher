@@ -112,6 +112,7 @@ export function Whiteboard() {
   const [protractorDrawEnabled, setProtractorDrawEnabled] = useState(false)
   const [compass, setCompass] = useState<CompassState>({ visible: false, x: 650, y: 340, radius: 140 })
   const [compassDrawEnabled, setCompassDrawEnabled] = useState(false)
+  const [snapGuides, setSnapGuides] = useState<{ x: number | null; y: number | null }>({ x: null, y: null })
   const canUndo = undoStack.length > 0
   const canRedo = redoStack.length > 0
 
@@ -205,6 +206,36 @@ export function Whiteboard() {
       },
       degree,
     }
+  }
+
+  function snapShapePosition(shape: Shape, nextX: number, nextY: number) {
+    const threshold = 8
+    const others = shapesRef.current.filter(item => item.id !== shape.id)
+    const xTargets = [600, ...others.flatMap(item => [item.x, item.x + item.w / 2, item.x + item.w])]
+    const yTargets = [325, ...others.flatMap(item => [item.y, item.y + item.h / 2, item.y + item.h])]
+    const xAnchors = [nextX, nextX + shape.w / 2, nextX + shape.w]
+    const yAnchors = [nextY, nextY + shape.h / 2, nextY + shape.h]
+
+    let bestX: { diff: number; target: number; anchor: number } | null = null
+    for (const target of xTargets) {
+      for (const anchor of xAnchors) {
+        const diff = Math.abs(target - anchor)
+        if (diff <= threshold && (!bestX || diff < bestX.diff)) bestX = { diff, target, anchor }
+      }
+    }
+
+    let bestY: { diff: number; target: number; anchor: number } | null = null
+    for (const target of yTargets) {
+      for (const anchor of yAnchors) {
+        const diff = Math.abs(target - anchor)
+        if (diff <= threshold && (!bestY || diff < bestY.diff)) bestY = { diff, target, anchor }
+      }
+    }
+
+    const x = bestX ? nextX + bestX.target - bestX.anchor : nextX
+    const y = bestY ? nextY + bestY.target - bestY.anchor : nextY
+    setSnapGuides({ x: bestX?.target ?? null, y: bestY?.target ?? null })
+    return { x, y }
   }
 
   function isStylusLike(event: React.PointerEvent<SVGSVGElement>) {
@@ -515,7 +546,11 @@ export function Whiteboard() {
         setShapeState(current => current.map(shape => shape.id === interaction.id ? { ...shape, x: Math.min(interaction.start.x, point.x), y: Math.min(interaction.start.y, point.y), w: Math.max(1, Math.abs(point.x - interaction.start.x)), h: Math.max(1, Math.abs(point.y - interaction.start.y)) } : shape))
       } else if (interaction.mode === 'move') {
         const dx = point.x - interaction.start.x; const dy = point.y - interaction.start.y
-        setShapeState(current => current.map(shape => shape.id === interaction.id ? { ...shape, x: interaction.originX + dx, y: interaction.originY + dy } : shape))
+        const movingShape = shapesRef.current.find(shape => shape.id === interaction.id)
+        if (movingShape) {
+          const snapped = snapShapePosition(movingShape, interaction.originX + dx, interaction.originY + dy)
+          setShapeState(current => current.map(shape => shape.id === interaction.id ? { ...shape, x: snapped.x, y: snapped.y } : shape))
+        }
       } else if (interaction.mode === 'resize') {
         const dx = point.x - interaction.start.x
         let nextW = Math.max(24, interaction.originW + dx)
@@ -553,7 +588,7 @@ export function Whiteboard() {
       return
     }
     if (animationFrameRef.current != null) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; flushScheduledWork() }
-    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null; protractorInteractionRef.current = null; protractorDrawRef.current = null; compassInteractionRef.current = null
+    drawingRef.current = false; activeStrokeIdRef.current = null; pendingPointsRef.current = []; pendingErasePointsRef.current = []; lastPointRef.current = null; interactionRef.current = null; rulerInteractionRef.current = null; rulerDrawRef.current = null; protractorInteractionRef.current = null; protractorDrawRef.current = null; compassInteractionRef.current = null; setSnapGuides({ x: null, y: null })
     try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* capture may already be released */ }
   }
 
@@ -620,7 +655,7 @@ export function Whiteboard() {
 
   function beginMove(event: React.PointerEvent<SVGGElement>, shape: Shape) {
     if (tool !== 'select') return
-    event.stopPropagation(); event.preventDefault(); snapshot(); setSelectedId(shape.id)
+    event.stopPropagation(); event.preventDefault(); snapshot(); setSelectedId(shape.id); setSnapGuides({ x: null, y: null })
     interactionRef.current = { mode: 'move', id: shape.id, start: pointFromClient(event.clientX, event.clientY), originX: shape.x, originY: shape.y }
     svgRef.current?.setPointerCapture(event.pointerId)
   }
@@ -712,6 +747,8 @@ export function Whiteboard() {
       <svg ref={svgRef} viewBox="0 0 1200 650" preserveAspectRatio="none" width="100%" style={{ display: 'block', height: 'min(72vh, 680px)', minHeight: 560, touchAction: 'none', cursor: tool === 'eraser' ? 'cell' : tool === 'select' ? 'default' : 'crosshair', backgroundColor: '#ffffff', backgroundImage: 'radial-gradient(circle, #dfe3ea 1px, transparent 1px)', backgroundSize: '24px 24px' }} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={endDrawing} onPointerCancel={endDrawing} onPointerLeave={event => { if ((drawingRef.current || interactionRef.current || fingerScrollRef.current) && event.buttons === 0) endDrawing(event) }} aria-label="Интерактивная учебная доска">
         {strokes.map(stroke => <StrokePath key={stroke.id} stroke={stroke} />)}
         {shapes.map(renderShape)}
+        {snapGuides.x != null && <line x1={snapGuides.x} y1={0} x2={snapGuides.x} y2={650} stroke="#e2558f" strokeWidth={1.5} strokeDasharray="8 6" pointerEvents="none" />}
+        {snapGuides.y != null && <line x1={0} y1={snapGuides.y} x2={1200} y2={snapGuides.y} stroke="#e2558f" strokeWidth={1.5} strokeDasharray="8 6" pointerEvents="none" />}
         {compass.visible && <g>
           <circle cx={compass.x} cy={compass.y} r={compass.radius} fill="none" stroke="rgba(106,76,147,.55)" strokeWidth={2} strokeDasharray="7 6" />
           <line x1={compass.x} y1={compass.y} x2={compass.x + compass.radius} y2={compass.y} stroke="#6a4c93" strokeWidth={2} />
@@ -766,6 +803,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 6: добавлен циркуль. Сначала выставь центр и радиус, затем нажми «Стилус» и коснись доски — будет построена точная окружность заданного радиуса.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 7: добавлены умные направляющие и привязка. При перемещении объектов их края и центры прилипают к центру доски и к краям/центрам других объектов, а совпадение показывается розовой направляющей.</p>
   </div>
 }
