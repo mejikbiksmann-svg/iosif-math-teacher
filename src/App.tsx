@@ -15,12 +15,13 @@ const homeworkStatus: Record<HomeworkStatus, string> = { 'not-started': 'Не н
 const lessonStatus = { upcoming: 'Предстоит', completed: 'Завершён', 'in-progress': 'Идёт сейчас' }
 
 function Link({ to, children, className = '', onNavigate }: { to: string; children: ReactNode; className?: string; onNavigate?: () => void }) {
-  return <a href={routePath(to)} className={className} onClick={(event) => { if (!event.metaKey && !event.ctrlKey) { event.preventDefault(); navigate(to); onNavigate?.() } }}>{children}</a>
+  return <a href={routePath(to)} className={className} onClick={(event) => { if (!event.metaKey && !event.ctrlKey) { event.preventDefault(); onNavigate?.(); navigate(to) } }}>{children}</a>
 }
 
 function Layout({ route, children }: { route: string; children: ReactNode }) {
   const { selectedSubject, setSelectedSubject, state } = useSubject()
   const [open, setOpen] = useState(false)
+  useEffect(() => { setOpen(false) }, [route])
   return <div className="dashboard-shell">
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="brand"><span className="brand-mark">И</span><span>Кабинет Иосифа<small>Учимся с интересом</small></span><button className="mobile-close" onClick={() => setOpen(false)} aria-label="Закрыть меню"><X /></button></div>
