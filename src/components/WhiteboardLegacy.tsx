@@ -17,6 +17,7 @@ type Shape = {
   text?: string
   src?: string
   aspectRatio?: number
+  fill?: string
 }
 type Tool = 'select' | 'pen' | 'eraser' | Exclude<ShapeKind, 'image'>
 type BoardState = { strokes: Stroke[]; shapes: Shape[] }
@@ -44,6 +45,7 @@ type Interaction =
 
 const palette = ['#202124', '#4f6df5', '#ef5b5b', '#22a06b', '#8b5cf6', '#f5a524']
 const widths = [2, 4, 8, 12]
+const stickyColors = ['#fff3a8', '#ffd9e2', '#d9f4ff', '#dcf5d6', '#e8ddff', '#ffe0bd']
 
 function pathFor(points: Point[]) {
   if (!points.length) return ''
@@ -101,6 +103,7 @@ export function Whiteboard() {
   const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState('#202124')
   const [width, setWidth] = useState(4)
+  const [stickyFill, setStickyFill] = useState('#fff3a8')
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [shapes, setShapes] = useState<Shape[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -450,9 +453,10 @@ export function Whiteboard() {
       snapshot()
       const shape = makeShape('sticky', point)
       shape.text = value
-      shape.w = 220
-      shape.h = 150
-      shape.color = '#7a5b00'
+      shape.w = 180
+      shape.h = 120
+      shape.color = '#3f3a2b'
+      shape.fill = stickyFill
       setShapeState(current => [...current, shape]); setSelectedId(shape.id); setTool('select'); return
     }
     if (tool === 'line' || tool === 'arrow' || tool === 'rect' || tool === 'ellipse') {
@@ -712,7 +716,7 @@ export function Whiteboard() {
       {shape.kind === 'arrow' && <><line x1={shape.x} y1={shape.y} x2={shape.x + shape.w} y2={shape.y + shape.h} {...common} /><path d={`M ${shape.x + shape.w} ${shape.y + shape.h} l -18 -8 m 18 8 l -8 -18`} {...common} /></>}
       {shape.kind === 'text' && <text x={shape.x} y={shape.y + Math.min(shape.h, 34)} fill={shape.color} fontSize={30} fontFamily="Inter, system-ui, sans-serif" stroke="none">{shape.text}</text>}
       {shape.kind === 'sticky' && <>
-        <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={10} fill="#fff3a8" stroke="#e0c85a" strokeWidth={2} />
+        <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={8} fill={shape.fill ?? '#fff3a8'} stroke="rgba(87, 77, 42, .18)" strokeWidth={1.5} />
         <foreignObject x={shape.x + 14} y={shape.y + 14} width={Math.max(1, shape.w - 28)} height={Math.max(1, shape.h - 28)} pointerEvents="none">
           <div style={{ color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'hidden', wordBreak: 'break-word' }}>{shape.text}</div>
         </foreignObject>
@@ -817,7 +821,18 @@ export function Whiteboard() {
         </g>}
       </svg>
 
-      <div style={{ position: 'absolute', zIndex: 3, left: '50%', bottom: 18, transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
+      <div style={{ position: 'absolute', zIndex: 3, left: '50%', bottom: 18, transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 9, maxWidth: 'calc(100% - 24px)', overflowX: 'auto', padding: '9px 12px', borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)' }}>
+        {(tool === 'sticky' || shapes.find(shape => shape.id === selectedId)?.kind === 'sticky') && <>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#626873', whiteSpace: 'nowrap' }}>Стикер</span>
+          {stickyColors.map(item => <button key={item} aria-label={`Цвет стикера ${item}`} onClick={() => {
+            setStickyFill(item)
+            if (selectedId != null) {
+              snapshot()
+              setShapeState(current => current.map(shape => shape.id === selectedId && shape.kind === 'sticky' ? { ...shape, fill: item } : shape))
+            }
+          }} style={{ width: 27, height: 27, flex: '0 0 27px', padding: 0, borderRadius: 7, border: '2px solid #fff', outline: stickyFill === item ? '2px solid #4f6df5' : '1px solid #dfe2e8', background: item, cursor: 'pointer' }} />)}
+          <div style={{ width: 1, height: 26, flex: '0 0 1px', background: '#e8eaf0', margin: '0 2px' }} />
+        </>}
         {palette.map(item => <button key={item} aria-label={`Цвет ${item}`} onClick={() => { setColor(item); if (selectedId != null) setShapeState(current => current.map(shape => shape.id === selectedId && shape.kind !== 'image' ? { ...shape, color: item } : shape)) }} style={{ width: 27, height: 27, padding: 0, borderRadius: '50%', border: color === item ? '3px solid #fff' : '2px solid #fff', outline: color === item ? '2px solid #4f6df5' : '1px solid #dfe2e8', background: item, cursor: 'pointer' }} />)}
         <input aria-label="Свой цвет" type="color" value={color} onChange={e => { setColor(e.target.value); if (selectedId != null) setShapeState(current => current.map(shape => shape.id === selectedId && shape.kind !== 'image' ? { ...shape, color: e.target.value } : shape)) }} style={{ width: 30, height: 30, border: 0, background: 'transparent', padding: 0, cursor: 'pointer' }} />
         <div style={{ width: 1, height: 26, background: '#e8eaf0', margin: '0 2px' }} />
@@ -826,6 +841,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 8: добавлены стикеры. Выбери «Стикер», коснись места на доске и введи текст. Стикер можно выделять, перемещать, масштабировать, вращать, удалять и откатывать через undo/redo.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 8: стикеры стали компактнее и ближе к UniDraw. Для новых и уже созданных стикеров доступны шесть пастельных цветов; выбранный стикер можно перекрасить прямо с нижней панели, а также перемещать, масштабировать, вращать и удалять.</p>
   </div>
 }
