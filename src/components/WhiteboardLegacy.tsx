@@ -107,6 +107,7 @@ export function Whiteboard() {
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [shapes, setShapes] = useState<Shape[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [editingStickyId, setEditingStickyId] = useState<number | null>(null)
   const [undoStack, setUndoStack] = useState<BoardState[]>([])
   const [redoStack, setRedoStack] = useState<BoardState[]>([])
   const [ruler, setRuler] = useState<RulerState>({ visible: false, x: 650, y: 330, length: 520, angle: 0 })
@@ -438,14 +439,14 @@ export function Whiteboard() {
       setStrokeState([...strokesRef.current, { id, points: [rulerSnap.point, rulerSnap.point], color, width }])
       return
     }
-    if (tool === 'select') { setSelectedId(null); interactionRef.current = null; return }
+    if (tool === 'select') { setEditingStickyId(null); setSelectedId(null); interactionRef.current = null; return }
     if (tool === 'text') {
       const value = window.prompt('Введите текст')
       if (!value) return
       snapshot()
       const shape = makeShape('text', point)
       shape.text = value; shape.w = Math.max(120, value.length * 18); shape.h = 42
-      setShapeState(current => [...current, shape]); setSelectedId(shape.id); setTool('select'); return
+      setShapeState(current => [...current, shape]); setSelectedId(shape.id); setEditingStickyId(shape.id); setTool('select'); return
     }
     if (tool === 'sticky') {
       snapshot()
@@ -697,8 +698,8 @@ export function Whiteboard() {
     const next = redoStack[redoStack.length - 1]
     setUndoStack(stack => [...stack, cloneBoard(currentBoard())]); setStrokeState(next.strokes); setShapeState(next.shapes); setSelectedId(null); setRedoStack(stack => stack.slice(0, -1))
   }
-  function clearBoard() { if (!strokesRef.current.length && !shapesRef.current.length) return; snapshot(); setStrokeState([]); setShapeState([]); setSelectedId(null) }
-  function deleteSelected() { if (selectedId == null) return; snapshot(); setShapeState(current => current.filter(shape => shape.id !== selectedId)); setSelectedId(null) }
+  function clearBoard() { if (!strokesRef.current.length && !shapesRef.current.length) return; snapshot(); setStrokeState([]); setShapeState([]); setSelectedId(null); setEditingStickyId(null) }
+  function deleteSelected() { if (selectedId == null) return; snapshot(); setShapeState(current => current.filter(shape => shape.id !== selectedId)); setSelectedId(null); setEditingStickyId(null) }
 
   const toolButton = (active = false): React.CSSProperties => ({ width: 44, height: 44, flex: '0 0 44px', border: 0, borderRadius: 12, display: 'grid', placeItems: 'center', background: active ? '#eef0ff' : 'transparent', color: active ? '#4f6df5' : '#525866', cursor: 'pointer' })
 
@@ -707,7 +708,7 @@ export function Whiteboard() {
     const cx = shape.x + shape.w / 2; const cy = shape.y + shape.h / 2
     const transform = `rotate(${shape.rotation} ${cx} ${cy})`
     const common = { stroke: shape.color, strokeWidth: shape.width, fill: 'transparent', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-    return <g key={shape.id} transform={transform} onPointerDown={event => beginMove(event, shape)} style={{ cursor: tool === 'select' ? 'move' : 'default' }}>
+    return <g key={shape.id} transform={transform} onPointerDown={event => { if (shape.kind === 'sticky' && editingStickyId === shape.id) return; beginMove(event, shape) }} onDoubleClick={event => { if (shape.kind === 'sticky') { event.stopPropagation(); setSelectedId(shape.id); setEditingStickyId(shape.id) } }} style={{ cursor: tool === 'select' ? 'move' : 'default' }}>
       {shape.kind === 'rect' && <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={8} {...common} />}
       {shape.kind === 'ellipse' && <ellipse cx={cx} cy={cy} rx={shape.w / 2} ry={shape.h / 2} {...common} />}
       {shape.kind === 'line' && <line x1={shape.x} y1={shape.y} x2={shape.x + shape.w} y2={shape.y + shape.h} {...common} />}
@@ -716,7 +717,8 @@ export function Whiteboard() {
       {shape.kind === 'sticky' && <>
         <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={8} fill={shape.fill ?? '#fff3a8'} stroke="rgba(87, 77, 42, .18)" strokeWidth={1.5} />
         <foreignObject x={shape.x + 10} y={shape.y + 10} width={Math.max(1, shape.w - 20)} height={Math.max(1, shape.h - 20)}>
-          <textarea
+          {editingStickyId === shape.id ? <textarea
+            autoFocus
             aria-label="Текст стикера"
             value={shape.text ?? ''}
             placeholder="Напиши здесь…"
@@ -727,7 +729,7 @@ export function Whiteboard() {
               setShapeState(current => current.map(item => item.id === shape.id ? { ...item, text: value } : item))
             }}
             style={{ width: '100%', height: '100%', resize: 'none', border: 0, outline: 0, background: 'transparent', color: shape.color, fontFamily: 'Manrope, Arial, sans-serif', fontSize: 20, lineHeight: 1.4, fontWeight: 500, letterSpacing: '0.01em', overflow: 'auto', padding: 6, boxSizing: 'border-box' }}
-          />
+          /> : <div style={{ width: '100%', height: '100%', color: shape.color, fontFamily: 'Manrope, Arial, sans-serif', fontSize: 20, lineHeight: 1.4, fontWeight: 500, letterSpacing: '0.01em', overflow: 'hidden', padding: 6, boxSizing: 'border-box', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none' }}>{shape.text || ' '}</div>}
         </foreignObject>
       </>}
       {shape.kind === 'image' && shape.src && <image href={shape.src} x={shape.x} y={shape.y} width={shape.w} height={shape.h} preserveAspectRatio="none" />}
@@ -850,6 +852,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Стикер теперь добавляется пустым и редактируется прямо на доске: можно печатать, удалять текст, снова возвращаться к нему и продолжать ввод. Для перемещения тяни стикер за свободный край, а текст редактируй внутри.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Стикер редактируется прямо на доске. Нажатие на пустое место завершает редактирование — после этого стикер можно свободно перемещать. Чтобы снова изменить текст, дважды нажми на стикер.</p>
   </div>
 }
