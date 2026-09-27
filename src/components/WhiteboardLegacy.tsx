@@ -448,11 +448,9 @@ export function Whiteboard() {
       setShapeState(current => [...current, shape]); setSelectedId(shape.id); setTool('select'); return
     }
     if (tool === 'sticky') {
-      const value = window.prompt('Текст стикера')
-      if (!value) return
       snapshot()
       const shape = makeShape('sticky', point)
-      shape.text = value
+      shape.text = ''
       shape.w = 180
       shape.h = 120
       shape.color = '#3f3a2b'
@@ -717,8 +715,19 @@ export function Whiteboard() {
       {shape.kind === 'text' && <text x={shape.x} y={shape.y + Math.min(shape.h, 34)} fill={shape.color} fontSize={30} fontFamily="Inter, system-ui, sans-serif" stroke="none">{shape.text}</text>}
       {shape.kind === 'sticky' && <>
         <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={8} fill={shape.fill ?? '#fff3a8'} stroke="rgba(87, 77, 42, .18)" strokeWidth={1.5} />
-        <foreignObject x={shape.x + 14} y={shape.y + 14} width={Math.max(1, shape.w - 28)} height={Math.max(1, shape.h - 28)} pointerEvents="none">
-          <div style={{ color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'hidden', wordBreak: 'break-word' }}>{shape.text}</div>
+        <foreignObject x={shape.x + 10} y={shape.y + 10} width={Math.max(1, shape.w - 20)} height={Math.max(1, shape.h - 20)}>
+          <textarea
+            aria-label="Текст стикера"
+            value={shape.text ?? ''}
+            placeholder="Напиши здесь…"
+            onPointerDown={event => { event.stopPropagation(); setSelectedId(shape.id) }}
+            onFocus={() => setSelectedId(shape.id)}
+            onChange={event => {
+              const value = event.target.value
+              setShapeState(current => current.map(item => item.id === shape.id ? { ...item, text: value } : item))
+            }}
+            style={{ width: '100%', height: '100%', resize: 'none', border: 0, outline: 0, background: 'transparent', color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'auto', padding: 4, boxSizing: 'border-box' }}
+          />
         </foreignObject>
       </>}
       {shape.kind === 'image' && shape.src && <image href={shape.src} x={shape.x} y={shape.y} width={shape.w} height={shape.h} preserveAspectRatio="none" />}
@@ -841,6 +850,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 8: стикеры стали компактнее и ближе к UniDraw. Для новых и уже созданных стикеров доступны шесть пастельных цветов; выбранный стикер можно перекрасить прямо с нижней панели, а также перемещать, масштабировать, вращать и удалять.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Стикер теперь добавляется пустым и редактируется прямо на доске: можно печатать, удалять текст, снова возвращаться к нему и продолжать ввод. Для перемещения тяни стикер за свободный край, а текст редактируй внутри.</p>
   </div>
 }
