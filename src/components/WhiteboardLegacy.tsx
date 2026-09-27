@@ -270,13 +270,47 @@ export function Whiteboard() {
     return false
   }
 
+  function shapeTouchesEraser(shape: Shape, point: Point, radius: number, radiusSq: number) {
+    const cx = shape.x + shape.w / 2
+    const cy = shape.y + shape.h / 2
+    const angle = -shape.rotation * Math.PI / 180
+    const dx = point.x - cx
+    const dy = point.y - cy
+    const localPoint = {
+      x: cx + dx * Math.cos(angle) - dy * Math.sin(angle),
+      y: cy + dx * Math.sin(angle) + dy * Math.cos(angle),
+    }
+
+    if (shape.kind === 'line' || shape.kind === 'arrow') {
+      return pointSegmentDistanceSq(localPoint, { x: shape.x, y: shape.y }, { x: shape.x + shape.w, y: shape.y + shape.h }) <= radiusSq
+    }
+    if (shape.kind === 'ellipse') {
+      const rx = Math.max(1, shape.w / 2 + radius)
+      const ry = Math.max(1, shape.h / 2 + radius)
+      const ex = (localPoint.x - cx) / rx
+      const ey = (localPoint.y - cy) / ry
+      return ex * ex + ey * ey <= 1
+    }
+    return localPoint.x >= shape.x - radius && localPoint.x <= shape.x + shape.w + radius
+      && localPoint.y >= shape.y - radius && localPoint.y <= shape.y + shape.h + radius
+  }
+
   function eraseAtPoints(points: Point[]) {
     if (!points.length) return
     const radius = Math.max(28, width * 3)
     const radiusSq = radius * radius
-    const current = strokesRef.current
-    const next = current.filter(stroke => !points.some(point => strokeTouchesEraser(stroke, point, radiusSq)))
-    if (next.length !== current.length) setStrokeState(next)
+
+    const currentStrokes = strokesRef.current
+    const nextStrokes = currentStrokes.filter(stroke => !points.some(point => strokeTouchesEraser(stroke, point, radiusSq)))
+    if (nextStrokes.length !== currentStrokes.length) setStrokeState(nextStrokes)
+
+    const currentShapes = shapesRef.current
+    const nextShapes = currentShapes.filter(shape => !points.some(point => shapeTouchesEraser(shape, point, radius, radiusSq)))
+    if (nextShapes.length !== currentShapes.length) {
+      setShapeState(nextShapes)
+      setSelectedId(current => current != null && nextShapes.some(shape => shape.id === current) ? current : null)
+      setEditingStickyId(current => current != null && nextShapes.some(shape => shape.id === current) ? current : null)
+    }
   }
 
   function queueErasePoint(point: Point) {
@@ -371,15 +405,15 @@ export function Whiteboard() {
   }
 
   function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
-    if (compass.visible && !compassDrawEnabled) {
+    if (compass.visible && !compassDrawEnabled && tool === 'pen') {
       event.preventDefault()
       return
     }
-    if (protractor.visible && !protractorDrawEnabled) {
+    if (protractor.visible && !protractorDrawEnabled && tool === 'pen') {
       event.preventDefault()
       return
     }
-    if (ruler.visible && !rulerDrawEnabled) {
+    if (ruler.visible && !rulerDrawEnabled && tool === 'pen') {
       event.preventDefault()
       return
     }
@@ -748,7 +782,7 @@ export function Whiteboard() {
       <div style={{ position: 'absolute', zIndex: 3, top: 14, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 6, maxWidth: 'calc(100% - 28px)', overflowX: 'auto', overflowY: 'hidden', padding: 8, borderRadius: 16, background: 'rgba(255,255,255,.96)', border: '1px solid #e7e9ee', boxShadow: '0 10px 28px rgba(34, 40, 49, .12)', backdropFilter: 'blur(10px)', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         <button title="Выделение" aria-label="Выделение" style={toolButton(tool === 'select')} onClick={() => setTool('select')}><MousePointer2 size={21} /></button>
         <button title={ruler.visible ? 'Рисовать по линейке' : protractor.visible ? 'Рисовать по транспортиру' : compass.visible ? 'Начертить окружность циркулем' : 'Стилус'} aria-label="Стилус" style={toolButton(tool === 'pen' && ((!ruler.visible || rulerDrawEnabled) && (!protractor.visible || protractorDrawEnabled) && (!compass.visible || compassDrawEnabled)))} onClick={() => { setTool('pen'); if (ruler.visible) setRulerDrawEnabled(true); if (protractor.visible) setProtractorDrawEnabled(true); if (compass.visible) setCompassDrawEnabled(true) }}><Brush size={21} /></button>
-        <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => setTool('eraser')}><Eraser size={21} /></button>
+        <button title="Ластик" aria-label="Ластик" style={toolButton(tool === 'eraser')} onClick={() => { setEditingStickyId(null); setSelectedId(null); setTool('eraser') }}><Eraser size={21} /></button>
         <button title="Линейка" aria-label="Линейка" aria-pressed={ruler.visible} style={toolButton(ruler.visible)} onClick={() => { setRulerDrawEnabled(false); setProtractorDrawEnabled(false); setProtractor(current => ({ ...current, visible: false })); setRuler(current => ({ ...current, visible: !current.visible })) }}><Ruler size={21} /></button>
         <button title="Транспортир" aria-label="Транспортир" aria-pressed={protractor.visible} style={toolButton(protractor.visible)} onClick={() => { setProtractorDrawEnabled(false); setRulerDrawEnabled(false); setRuler(current => ({ ...current, visible: false })); setProtractor(current => ({ ...current, visible: !current.visible })) }}>
           <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -852,6 +886,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Стикер редактируется прямо на доске. Нажатие на пустое место завершает редактирование — после этого стикер можно свободно перемещать. Чтобы снова изменить текст, дважды нажми на стикер.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Ластик теперь удаляет не только рукописные линии, но и объекты целиком: текст, стикеры, фигуры, стрелки и изображения. Нажми «Ластик» и проведи по тому, что нужно убрать.</p>
   </div>
 }
