@@ -726,7 +726,7 @@ export function Whiteboard() {
               const value = event.target.value
               setShapeState(current => current.map(item => item.id === shape.id ? { ...item, text: value } : item))
             }}
-            style={{ width: '100%', height: '100%', resize: 'none', border: 0, outline: 0, background: 'transparent', color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'auto', padding: 4, boxSizing: 'border-box' }}
+            style={{ width: '100%', height: '100%', resize: 'none', border: 0, outline: 0, background: 'transparent', color: shape.color, fontFamily: 'Manrope, Arial, sans-serif', fontSize: 20, lineHeight: 1.4, fontWeight: 500, letterSpacing: '0.01em', overflow: 'auto', padding: 6, boxSizing: 'border-box' }}
           />
         </foreignObject>
       </>}
