@@ -3,7 +3,7 @@ import { Brush, Circle, Eraser, ImagePlus, Minus, MousePointer2, MoveRight, Rota
 
 type Point = { x: number; y: number }
 type Stroke = { id: number; points: Point[]; color: string; width: number }
-type ShapeKind = 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'image'
+type ShapeKind = 'line' | 'arrow' | 'rect' | 'ellipse' | 'text' | 'sticky' | 'image'
 type Shape = {
   id: number
   kind: ShapeKind
@@ -444,6 +444,17 @@ export function Whiteboard() {
       shape.text = value; shape.w = Math.max(120, value.length * 18); shape.h = 42
       setShapeState(current => [...current, shape]); setSelectedId(shape.id); setTool('select'); return
     }
+    if (tool === 'sticky') {
+      const value = window.prompt('Текст стикера')
+      if (!value) return
+      snapshot()
+      const shape = makeShape('sticky', point)
+      shape.text = value
+      shape.w = 220
+      shape.h = 150
+      shape.color = '#7a5b00'
+      setShapeState(current => [...current, shape]); setSelectedId(shape.id); setTool('select'); return
+    }
     if (tool === 'line' || tool === 'arrow' || tool === 'rect' || tool === 'ellipse') {
       snapshot()
       const shape = makeShape(tool, point)
@@ -700,6 +711,12 @@ export function Whiteboard() {
       {shape.kind === 'line' && <line x1={shape.x} y1={shape.y} x2={shape.x + shape.w} y2={shape.y + shape.h} {...common} />}
       {shape.kind === 'arrow' && <><line x1={shape.x} y1={shape.y} x2={shape.x + shape.w} y2={shape.y + shape.h} {...common} /><path d={`M ${shape.x + shape.w} ${shape.y + shape.h} l -18 -8 m 18 8 l -8 -18`} {...common} /></>}
       {shape.kind === 'text' && <text x={shape.x} y={shape.y + Math.min(shape.h, 34)} fill={shape.color} fontSize={30} fontFamily="Inter, system-ui, sans-serif" stroke="none">{shape.text}</text>}
+      {shape.kind === 'sticky' && <>
+        <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={10} fill="#fff3a8" stroke="#e0c85a" strokeWidth={2} />
+        <foreignObject x={shape.x + 14} y={shape.y + 14} width={Math.max(1, shape.w - 28)} height={Math.max(1, shape.h - 28)} pointerEvents="none">
+          <div xmlns="http://www.w3.org/1999/xhtml" style={{ color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'hidden', wordBreak: 'break-word' }}>{shape.text}</div>
+        </foreignObject>
+      </>}
       {shape.kind === 'image' && shape.src && <image href={shape.src} x={shape.x} y={shape.y} width={shape.w} height={shape.h} preserveAspectRatio="none" />}
       {selected && <>
         <rect x={shape.x - 8} y={shape.y - 8} width={shape.w + 16} height={shape.h + 16} fill="none" stroke="#4f6df5" strokeWidth={2} strokeDasharray="7 5" rx={8} />
@@ -734,6 +751,12 @@ export function Whiteboard() {
         <div aria-hidden="true" style={{ width: 1, height: 28, flex: '0 0 1px', background: '#eceef2', margin: '0 3px' }} />
         <button title="Добавить изображение" aria-label="Добавить изображение" style={toolButton()} onClick={() => fileInputRef.current?.click()}><ImagePlus size={21} /></button>
         <button title="Текст" aria-label="Текст" style={toolButton(tool === 'text')} onClick={() => setTool('text')}><Type size={21} /></button>
+        <button title="Стикер" aria-label="Стикер" style={toolButton(tool === 'sticky')} onClick={() => setTool('sticky')}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 4h14v11l-5 5H5z" />
+            <path d="M14 20v-5h5" />
+          </svg>
+        </button>
         <button title="Линия" aria-label="Линия" style={toolButton(tool === 'line')} onClick={() => setTool('line')}><Minus size={21} /></button>
         <button title="Стрелка" aria-label="Стрелка" style={toolButton(tool === 'arrow')} onClick={() => setTool('arrow')}><MoveRight size={21} /></button>
         <button title="Прямоугольник" aria-label="Прямоугольник" style={toolButton(tool === 'rect')} onClick={() => setTool('rect')}><Square size={21} /></button>
@@ -803,6 +826,6 @@ export function Whiteboard() {
         </select>
       </div>
     </div>
-    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 7: добавлены умные направляющие и привязка. При перемещении объектов их края и центры прилипают к центру доски и к краям/центрам других объектов, а совпадение показывается розовой направляющей.</p>
+    <p style={{ margin: '10px 2px 0', color: '#8a909a', fontSize: 12 }}>Этап 8: добавлены стикеры. Выбери «Стикер», коснись места на доске и введи текст. Стикер можно выделять, перемещать, масштабировать, вращать, удалять и откатывать через undo/redo.</p>
   </div>
 }
