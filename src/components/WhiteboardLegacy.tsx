@@ -714,7 +714,7 @@ export function Whiteboard() {
       {shape.kind === 'sticky' && <>
         <rect x={shape.x} y={shape.y} width={shape.w} height={shape.h} rx={10} fill="#fff3a8" stroke="#e0c85a" strokeWidth={2} />
         <foreignObject x={shape.x + 14} y={shape.y + 14} width={Math.max(1, shape.w - 28)} height={Math.max(1, shape.h - 28)} pointerEvents="none">
-          <div xmlns="http://www.w3.org/1999/xhtml" style={{ color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'hidden', wordBreak: 'break-word' }}>{shape.text}</div>
+          <div style={{ color: shape.color, fontFamily: 'Inter, system-ui, sans-serif', fontSize: 22, lineHeight: 1.25, fontWeight: 600, overflow: 'hidden', wordBreak: 'break-word' }}>{shape.text}</div>
         </foreignObject>
       </>}
       {shape.kind === 'image' && shape.src && <image href={shape.src} x={shape.x} y={shape.y} width={shape.w} height={shape.h} preserveAspectRatio="none" />}
